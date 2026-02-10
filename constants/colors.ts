@@ -1,12 +1,34 @@
-// template
-const tintColorLight = "#2f95dc";
-
-export default {
-  light: {
-    text: "#000",
-    background: "#fff",
-    tint: tintColorLight,
-    tabIconDefault: "#ccc",
-    tabIconSelected: tintColorLight,
-  },
+const Colors = {
+  bg: '#0A0A0A',
+  bgCard: '#151515',
+  bgElevated: '#1A1A1A',
+  bgInput: '#1A1A1A',
+  emerald: '#10b981',
+  emeraldDark: '#059669',
+  emeraldLight: '#34d399',
+  emeraldMuted: 'rgba(16, 185, 129, 0.15)',
+  white: '#FFFFFF',
+  textPrimary: '#FFFFFF',
+  textSecondary: '#9CA3AF',
+  textMuted: '#6B7280',
+  border: 'rgba(255,255,255,0.08)',
+  borderLight: 'rgba(255,255,255,0.12)',
+  red: '#EF4444',
+  orange: '#F97316',
+  yellow: '#EAB308',
+  lime: '#84CC16',
+  green: '#22C55E',
+  blue: '#3B82F6',
+  nutriA: '#22C55E',
+  nutriB: '#84CC16',
+  nutriC: '#EAB308',
+  nutriD: '#F97316',
+  nutriE: '#EF4444',
+  ecoA: '#16A34A',
+  ecoB: '#65A30D',
+  ecoC: '#CA8A04',
+  ecoD: '#EA580C',
+  ecoE: '#DC2626',
 };
+
+export default Colors;
