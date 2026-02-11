@@ -11,24 +11,6 @@ import Colors from "@/constants/colors";
 
 SplashScreen.preventAutoHideAsync();
 
-function RootLayoutNav() {
-  return (
-    <Stack
-      screenOptions={{
-        headerBackTitle: "Back",
-        headerStyle: { backgroundColor: Colors.bg },
-        headerTintColor: Colors.textPrimary,
-        contentStyle: { backgroundColor: Colors.bg },
-      }}
-    >
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="product/[barcode]" options={{ headerShown: false }} />
-      <Stack.Screen name="compare" options={{ headerShown: false }} />
-      <Stack.Screen name="list/[id]" options={{ headerShown: false }} />
-    </Stack>
-  );
-}
-
 export default function RootLayout() {
   useEffect(() => {
     SplashScreen.hideAsync();
@@ -40,7 +22,26 @@ export default function RootLayout() {
         <GestureHandlerRootView>
           <KeyboardProvider>
             <DataProvider>
-              <RootLayoutNav />
+              <Stack
+                screenOptions={{
+                  headerBackTitle: "Back",
+                  headerStyle: { backgroundColor: Colors.bg },
+                  headerTintColor: Colors.textPrimary,
+                  contentStyle: { backgroundColor: Colors.bg },
+                }}
+              >
+                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                <Stack.Screen
+                  name="product/[barcode]"
+                  options={{ headerShown: false }}
+                />
+                <Stack.Screen name="compare" options={{ headerShown: false }} />
+                <Stack.Screen
+                  name="list/[id]"
+                  options={{ headerShown: false }}
+                />
+                <Stack.Screen name="login" options={{ headerShown: false }} />
+              </Stack>
             </DataProvider>
           </KeyboardProvider>
         </GestureHandlerRootView>

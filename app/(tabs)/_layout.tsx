@@ -19,7 +19,9 @@ function NativeTabLayout() {
         <Label>History</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="scan">
-        <Icon sf={{ default: "barcode.viewfinder", selected: "barcode.viewfinder" }} />
+        <Icon
+          sf={{ default: "barcode.viewfinder", selected: "barcode.viewfinder" }}
+        />
         <Label>Scan</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="lists">
@@ -29,6 +31,15 @@ function NativeTabLayout() {
       <NativeTabs.Trigger name="profile">
         <Icon sf={{ default: "person", selected: "person.fill" }} />
         <Label>Profile</Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="chat">
+        <Icon
+          sf={{
+            default: "bubble.left.and.bubble.right",
+            selected: "bubble.left.and.bubble.right.fill",
+          }}
+        />
+        <Label>AI Chat</Label>
       </NativeTabs.Trigger>
     </NativeTabs>
   );
@@ -60,7 +71,9 @@ function ClassicTabLayout() {
               style={StyleSheet.absoluteFill}
             />
           ) : isWeb ? (
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: Colors.bg }]} />
+            <View
+              style={[StyleSheet.absoluteFill, { backgroundColor: Colors.bg }]}
+            />
           ) : null,
       }}
     >
@@ -106,6 +119,15 @@ function ClassicTabLayout() {
           title: "Profile",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="person" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="chat"
+        options={{
+          title: "AI Chat",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="chatbubble-ellipses" size={size} color={color} />
           ),
         }}
       />
