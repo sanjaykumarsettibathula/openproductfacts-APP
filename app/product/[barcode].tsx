@@ -10,7 +10,6 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
-  TextInput,
 } from "react-native";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -24,6 +23,7 @@ import EcoScoreBadge from "@/components/EcoScoreBadge";
 import FloatingAIChat from "@/components/FloatingAIChat";
 import AIHealthInsights from "@/components/AIHealthInsights";
 import NutritionBarChart from "@/components/NutritionBarChart";
+import HealthierAlternatives from "@/components/HealthierAlternatives"; // ✅ NEW IMPORT
 
 export default function ProductDetailScreen() {
   const { barcode } = useLocalSearchParams<{ barcode: string }>();
@@ -40,6 +40,7 @@ export default function ProductDetailScreen() {
   const [product, setProduct] = useState<ScannedProduct | null>(null);
   const [loading, setLoading] = useState(true);
   const [showListModal, setShowListModal] = useState(false);
+  const [showAlternatives, setShowAlternatives] = useState(false); // ✅ NEW STATE
 
   useEffect(() => {
     loadProduct();
@@ -60,6 +61,38 @@ export default function ProductDetailScreen() {
     }
     setLoading(false);
   };
+
+  // ✅ NEW FUNCTION: Determine if product needs alternatives
+  const shouldShowAlternatives = (product: ScannedProduct): boolean => {
+    // Show alternatives if product has poor Nutri-Score (D or E)
+    const nutriScore = product.nutri_score?.toUpperCase();
+    if (nutriScore === "D" || nutriScore === "E") return true;
+
+    // Show if NOVA 4 (ultra-processed)
+    if (product.nova_group === 4) return true;
+
+    // Show if harmful based on nutrition values
+    let harmfulFactors = 0;
+
+    // High sugar (>15g per 100g)
+    if (product.nutrition.sugars > 15) harmfulFactors++;
+
+    // High saturated fat (>10g per 100g)
+    if (product.nutrition.saturated_fat > 10) harmfulFactors++;
+
+    // High sodium (>0.6g per 100g = 600mg)
+    if (product.nutrition.sodium > 0.6) harmfulFactors++;
+
+    // If 2 or more harmful factors, show alternatives
+    return harmfulFactors >= 2;
+  };
+
+  // ✅ NEW EFFECT: Calculate if alternatives should be shown
+  useEffect(() => {
+    if (product) {
+      setShowAlternatives(shouldShowAlternatives(product));
+    }
+  }, [product]);
 
   const handleAddToList = () => {
     if (!product) return;
@@ -84,7 +117,6 @@ export default function ProductDetailScreen() {
     if (!product) return;
     addProductToList(listId, product);
     setShowListModal(false);
-    // Show success feedback
     Alert.alert("✓ Added", `"${product.name}" added to "${listName}"`);
   };
 
@@ -277,6 +309,12 @@ export default function ProductDetailScreen() {
               </View>
             </>
           )}
+
+          {/* ✅ NEW COMPONENT: Healthier Alternatives */}
+          <HealthierAlternatives
+            product={product}
+            showAlternatives={showAlternatives}
+          />
 
           <View style={styles.barcodeInfo}>
             <Ionicons
@@ -501,13 +539,6 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   sectionSub: { color: Colors.textMuted, fontSize: 12, marginBottom: 10 },
-  nutritionCard: {
-    backgroundColor: Colors.bgCard,
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
   infoCard: {
     backgroundColor: Colors.bgCard,
     borderRadius: 16,

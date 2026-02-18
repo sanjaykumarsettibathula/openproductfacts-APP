@@ -116,6 +116,100 @@ function normaliseScore(val: any): "A" | "B" | "C" | "D" | "E" | "unknown" {
     | "unknown";
 }
 
+/**
+ * Estimate Eco-Score when not available in OFF database.
+ * Based on: packaging, transportation distance, processing level (NOVA).
+ * This is an approximation — real Eco-Score uses LCA (Life Cycle Assessment).
+ */
+function estimateEcoScore(
+  product: any,
+): "A" | "B" | "C" | "D" | "E" | "unknown" {
+  let score = 50; // Start neutral (C grade)
+
+  // NOVA processing penalty
+  const nova = product.nova_group || 0;
+  if (nova === 4)
+    score -= 20; // Ultra-processed = high environmental impact
+  else if (nova === 3) score -= 10;
+  else if (nova === 1) score += 10; // Unprocessed = low impact
+
+  // Packaging analysis
+  const packaging = (product.packaging || "").toLowerCase();
+  if (packaging.includes("plastic")) score -= 15;
+  else if (packaging.includes("aluminum") || packaging.includes("can"))
+    score -= 10;
+  else if (packaging.includes("glass")) score -= 5;
+  else if (packaging.includes("cardboard") || packaging.includes("paper"))
+    score += 5;
+
+  // Origins/transportation
+  const origins = (product.origins || "").toLowerCase();
+  const categories = (product.categories || "").toLowerCase();
+
+  // Local/regional products score better
+  if (
+    origins.includes("france") ||
+    origins.includes("europe") ||
+    origins.includes("local")
+  ) {
+    score += 10;
+  }
+  // Long-distance imports (air freight)
+  if (
+    origins.includes("asia") ||
+    origins.includes("america") ||
+    origins.includes("australia")
+  ) {
+    score -= 10;
+  }
+
+  // Animal products have higher carbon footprint
+  if (
+    categories.includes("meat") ||
+    categories.includes("beef") ||
+    categories.includes("lamb")
+  ) {
+    score -= 20;
+  } else if (categories.includes("dairy") || categories.includes("cheese")) {
+    score -= 10;
+  } else if (
+    categories.includes("plant-based") ||
+    categories.includes("vegan")
+  ) {
+    score += 10;
+  }
+
+  // Organic/sustainable labels
+  const labels = (product.labels_tags || []).join(" ").toLowerCase();
+  if (labels.includes("organic") || labels.includes("bio")) score += 15;
+  if (labels.includes("fair-trade")) score += 5;
+  if (labels.includes("sustainable")) score += 10;
+
+  // Convert score to letter grade
+  // Scale: 0-20=E, 21-40=D, 41-60=C, 61-80=B, 81-100=A
+  if (score >= 81) return "A";
+  if (score >= 61) return "B";
+  if (score >= 41) return "C";
+  if (score >= 21) return "D";
+  return "E";
+}
+
+/**
+ * Get ingredients in English, falling back to other languages if needed.
+ * OFF stores ingredients in multiple language fields.
+ */
+function getIngredientsText(product: any): string {
+  // Priority: English > original language > French > any available
+  return (
+    product.ingredients_text_en ||
+    product.ingredients_text_with_allergens_en ||
+    product.ingredients_text ||
+    product.ingredients_text_fr ||
+    product.ingredients_text_with_allergens ||
+    ""
+  );
+}
+
 function getUncertainFields(confidence: number): Array<keyof ScannedProduct> {
   if (confidence >= CONFIDENCE_HIGH) return [];
   if (confidence >= CONFIDENCE_MEDIUM) {
@@ -521,6 +615,11 @@ JSON structure:
 
           if (bestOff?.nutriments?.["energy-kcal_100g"] > 0) {
             console.log(`✅ OFF nutrition found for: ${bestOff.product_name}`);
+
+            const ecoScore = normaliseScore(bestOff.ecoscore_grade);
+            const finalEcoScore =
+              ecoScore === "unknown" ? estimateEcoScore(bestOff) : ecoScore;
+
             return {
               id: `img-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
               barcode: detectedBarcode || bestOff.code || `IMG-${Date.now()}`,
@@ -534,8 +633,7 @@ JSON structure:
                 "",
               categories: bestOff.categories || parsed.product_type || "",
               quantity: bestOff.quantity || parsed.quantity || "",
-              ingredients_text:
-                bestOff.ingredients_text || parsed.ingredients_text || "",
+              ingredients_text: getIngredientsText(bestOff),
               nutrition: {
                 energy_kj: bestOff.nutriments?.["energy-kj_100g"] || 0,
                 energy_kcal: bestOff.nutriments?.["energy-kcal_100g"] || 0,
@@ -557,7 +655,7 @@ JSON structure:
                   : [],
               labels: bestOff.labels_tags || [],
               nutri_score: normaliseScore(bestOff.nutriscore_grade),
-              eco_score: normaliseScore(bestOff.ecoscore_grade),
+              eco_score: finalEcoScore,
               nova_group: bestOff.nova_group || parsed.nova_group || 0,
               origins: bestOff.origins || "",
               packaging: "",
@@ -620,6 +718,11 @@ export async function fetchProductByBarcode(
     const resolvedImage =
       offImage || (await validateImageUrl(buildOFFImageUrl(barcode)));
 
+    // Extract eco-score, estimate if missing
+    const ecoScore = normaliseScore(p.ecoscore_grade);
+    const finalEcoScore =
+      ecoScore === "unknown" ? estimateEcoScore(p) : ecoScore;
+
     const product: ProductWithMeta = {
       id: `off-${Date.now()}-${barcode}`,
       barcode,
@@ -628,7 +731,7 @@ export async function fetchProductByBarcode(
       image_url: resolvedImage,
       categories: p.categories || "",
       quantity: p.quantity || "",
-      ingredients_text: p.ingredients_text || p.ingredients_text_en || "",
+      ingredients_text: getIngredientsText(p),
       nutrition: {
         energy_kj: p.nutriments?.["energy-kj_100g"] || 0,
         energy_kcal: p.nutriments?.["energy-kcal_100g"] || 0,
@@ -648,7 +751,7 @@ export async function fetchProductByBarcode(
         : [],
       labels: p.labels_tags || [],
       nutri_score: normaliseScore(p.nutriscore_grade),
-      eco_score: normaliseScore(p.ecoscore_grade),
+      eco_score: finalEcoScore,
       nova_group: p.nova_group || 0,
       origins: p.origins || "",
       packaging: p.packaging || "",
@@ -751,45 +854,51 @@ function matchScore(query: string, productName: string): number {
 function parseOFFProducts(rawProducts: any[]): ProductWithMeta[] {
   return rawProducts
     .filter((p: any) => p.product_name || p.product_name_en)
-    .map((p: any) => ({
-      id: `off-${Date.now()}-${p.code}`,
-      barcode: p.code || `SEARCH-${Date.now()}`,
-      name: p.product_name || p.product_name_en || "Unknown",
-      brand: p.brands || "",
-      image_url: p.image_url || p.image_front_url || "",
-      categories: p.categories || "",
-      quantity: p.quantity || "",
-      ingredients_text: p.ingredients_text || p.ingredients_text_en || "",
-      nutrition: {
-        energy_kj: p.nutriments?.["energy-kj_100g"] || 0,
-        energy_kcal: p.nutriments?.["energy-kcal_100g"] || 0,
-        fat: p.nutriments?.fat_100g || 0,
-        saturated_fat: p.nutriments?.["saturated-fat_100g"] || 0,
-        carbohydrates: p.nutriments?.carbohydrates_100g || 0,
-        sugars: p.nutriments?.sugars_100g || 0,
-        fiber: p.nutriments?.fiber_100g || 0,
-        protein: p.nutriments?.proteins_100g || 0,
-        salt: p.nutriments?.salt_100g || 0,
-        sodium: p.nutriments?.sodium_100g || 0,
-      },
-      allergens: p.allergens_tags
-        ? p.allergens_tags.map((a: string) =>
-            a.replace("en:", "").replace(/-/g, " "),
-          )
-        : [],
-      labels: p.labels_tags || [],
-      nutri_score: normaliseScore(p.nutriscore_grade),
-      eco_score: normaliseScore(p.ecoscore_grade),
-      nova_group: p.nova_group || 0,
-      origins: p.origins || "",
-      packaging: p.packaging || "",
-      stores: p.stores || "",
-      countries: p.countries || "",
-      serving_size: p.serving_size || "",
-      scanned_at: new Date().toISOString(),
-      data_source: "off" as const,
-      uncertain_fields: [],
-    }));
+    .map((p: any) => {
+      const ecoScore = normaliseScore(p.ecoscore_grade);
+      const finalEcoScore =
+        ecoScore === "unknown" ? estimateEcoScore(p) : ecoScore;
+
+      return {
+        id: `off-${Date.now()}-${p.code}`,
+        barcode: p.code || `SEARCH-${Date.now()}`,
+        name: p.product_name || p.product_name_en || "Unknown",
+        brand: p.brands || "",
+        image_url: p.image_url || p.image_front_url || "",
+        categories: p.categories || "",
+        quantity: p.quantity || "",
+        ingredients_text: getIngredientsText(p),
+        nutrition: {
+          energy_kj: p.nutriments?.["energy-kj_100g"] || 0,
+          energy_kcal: p.nutriments?.["energy-kcal_100g"] || 0,
+          fat: p.nutriments?.fat_100g || 0,
+          saturated_fat: p.nutriments?.["saturated-fat_100g"] || 0,
+          carbohydrates: p.nutriments?.carbohydrates_100g || 0,
+          sugars: p.nutriments?.sugars_100g || 0,
+          fiber: p.nutriments?.fiber_100g || 0,
+          protein: p.nutriments?.proteins_100g || 0,
+          salt: p.nutriments?.salt_100g || 0,
+          sodium: p.nutriments?.sodium_100g || 0,
+        },
+        allergens: p.allergens_tags
+          ? p.allergens_tags.map((a: string) =>
+              a.replace("en:", "").replace(/-/g, " "),
+            )
+          : [],
+        labels: p.labels_tags || [],
+        nutri_score: normaliseScore(p.nutriscore_grade),
+        eco_score: finalEcoScore,
+        nova_group: p.nova_group || 0,
+        origins: p.origins || "",
+        packaging: p.packaging || "",
+        stores: p.stores || "",
+        countries: p.countries || "",
+        serving_size: p.serving_size || "",
+        scanned_at: new Date().toISOString(),
+        data_source: "off" as const,
+        uncertain_fields: [],
+      };
+    });
 }
 
 export async function searchProducts(

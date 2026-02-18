@@ -336,6 +336,16 @@ export default function ScanScreen() {
    */
   function findInHistoryByBarcode(barcode: string): ProductWithMeta | null {
     if (!scanHistory?.length) return null;
+
+    // DEBUG: log all barcodes in history to diagnose mismatches
+    if (barcode === "8906009994796") {
+      console.log("🔍 DEBUG: Searching history for barcode:", barcode);
+      console.log(
+        "🔍 DEBUG: History entries:",
+        scanHistory.map((s) => `${s.barcode} → ${s.name}`).slice(0, 10),
+      );
+    }
+
     const match = scanHistory.find((s) => s.barcode === barcode);
     if (match) {
       console.log(`⚡ History hit (barcode): ${match.name}`);
