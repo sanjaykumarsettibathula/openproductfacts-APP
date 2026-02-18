@@ -8,10 +8,15 @@ import {
   StyleSheet,
   Platform,
   Alert,
+  TouchableOpacity,
+  Modal,
+  KeyboardAvoidingView,
+  Keyboard,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
+import * as DocumentPicker from "expo-document-picker";
 import Colors from "@/constants/colors";
 import { useData } from "@/lib/DataContext";
 import { UserProfile } from "@/lib/storage";
@@ -27,20 +32,16 @@ const ALLERGEN_OPTIONS = [
   "Tree Nuts",
   "Shellfish",
   "Sesame",
-  "Celery",
-  "Mustard",
-  "Lupin",
 ];
+
 const CONDITION_OPTIONS = [
   "Diabetes",
   "Hypertension",
   "Heart Disease",
   "Celiac Disease",
   "High Cholesterol",
-  "Obesity",
-  "Anemia",
-  "Kidney Disease",
 ];
+
 const DIET_OPTIONS = [
   "Vegetarian",
   "Vegan",
@@ -48,21 +49,27 @@ const DIET_OPTIONS = [
   "Kosher",
   "Low Sodium",
   "Low Sugar",
-  "Keto",
-  "Paleo",
-  "Gluten Free",
 ];
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { profile, updateProfile, history, favorites } = useData();
+  const { profile, updateProfile } = useData();
   const [form, setForm] = useState<UserProfile>(profile);
   const [dirty, setDirty] = useState(false);
+  const [healthReport, setHealthReport] = useState<string | null>(null);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [customInputVisible, setCustomInputVisible] = useState(false);
+  const [customInput, setCustomInput] = useState("");
+  const [modalType, setModalType] = useState<
+    "allergies" | "conditions" | "dietary_restrictions"
+  >("allergies");
 
   const webTopInset = Platform.OS === "web" ? 67 : 0;
 
   useEffect(() => {
+    // Load profile from context whenever it changes
+    console.log("Profile from context:", profile);
     setForm(profile);
   }, [profile]);
 
@@ -75,7 +82,7 @@ export default function ProfileScreen() {
     key: "allergies" | "conditions" | "dietary_restrictions",
     item: string,
   ) => {
-    const arr = form[key] as string[];
+    const arr = (form[key] as string[]) || [];
     const updated = arr.includes(item)
       ? arr.filter((a) => a !== item)
       : [...arr, item];
@@ -96,344 +103,599 @@ export default function ProfileScreen() {
         style: "destructive",
         onPress: async () => {
           await logoutUser();
-          router.replace("/login");
+          router.replace("/login-new");
         },
       },
     ]);
   };
 
+  const pickHealthReport = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ["application/pdf", "image/*"],
+        copyToCacheDirectory: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        setHealthReport(asset.name);
+        Alert.alert("Success", "Health report uploaded successfully!");
+      }
+    } catch (error) {
+      Alert.alert("Error", "Failed to upload health report");
+    }
+  };
+
+  const openAddModal = (
+    type: "allergies" | "conditions" | "dietary_restrictions",
+  ) => {
+    Keyboard.dismiss();
+    setModalType(type);
+    setModalVisible(true);
+  };
+
+  const addNewItem = (item: string) => {
+    toggleArrayItem(modalType, item);
+  };
+
+  const handleAddCustom = () => {
+    if (customInput.trim()) {
+      toggleArrayItem(modalType, customInput.trim());
+      setCustomInput("");
+      setCustomInputVisible(false);
+      setModalVisible(false);
+    }
+  };
+
+  const getModalOptions = () => {
+    switch (modalType) {
+      case "allergies":
+        return ALLERGEN_OPTIONS;
+      case "conditions":
+        return CONDITION_OPTIONS;
+      case "dietary_restrictions":
+        return DIET_OPTIONS;
+      default:
+        return [];
+    }
+  };
+
+  const getModalTitle = () => {
+    switch (modalType) {
+      case "allergies":
+        return "Manage Allergies";
+      case "conditions":
+        return "Manage Health Conditions";
+      case "dietary_restrictions":
+        return "Manage Dietary Preferences";
+      default:
+        return "";
+    }
+  };
+
+  const renderSection = (
+    title: string,
+    data: string[],
+    type: "allergies" | "conditions" | "dietary_restrictions",
+  ) => {
+    return (
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>{title}</Text>
+          <TouchableOpacity
+            style={styles.addButton}
+            onPress={() => openAddModal(type)}
+          >
+            <Ionicons name="add" size={16} color={Colors.emerald} />
+          </TouchableOpacity>
+        </View>
+
+        {data.length === 0 ? (
+          <Text style={styles.emptyText}>No {title.toLowerCase()} added</Text>
+        ) : (
+          <View style={styles.pillContainer}>
+            {data.map((item, index) => (
+              <View key={index} style={styles.pill}>
+                <Text style={styles.pillText}>{item}</Text>
+                <TouchableOpacity
+                  onPress={() => toggleArrayItem(type, item)}
+                  style={styles.pillClose}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Ionicons
+                    name="close"
+                    size={14}
+                    color={Colors.textSecondary}
+                  />
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        )}
+      </View>
+    );
+  };
+
   return (
     <View style={[styles.container, { paddingTop: webTopInset }]}>
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={[
-          styles.scrollContent,
-          { paddingBottom: Platform.OS === "web" ? 84 : insets.bottom + 90 },
-        ]}
-        showsVerticalScrollIndicator={false}
+      <KeyboardAvoidingView
+        style={styles.keyboardView}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
       >
-        <View style={{ paddingTop: insets.top + 12 }}>
-          <View style={styles.headerRow}>
-            <Text style={styles.title}>Profile</Text>
-            <View style={styles.headerActions}>
-              {dirty && (
-                <Pressable onPress={handleSave} style={styles.saveBtn}>
-                  <Ionicons name="checkmark" size={20} color="#fff" />
-                </Pressable>
-              )}
-              <Pressable onPress={handleLogout} style={styles.logoutBtn}>
-                <Ionicons
-                  name="log-out"
-                  size={20}
-                  color={Colors.textSecondary}
-                />
-              </Pressable>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingBottom: Platform.OS === "web" ? 34 : insets.bottom + 200 },
+          ]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+        >
+          <View style={{ paddingTop: insets.top + 16 }}>
+            <View style={styles.headerRow}>
+              <View>
+                <Text style={styles.greeting}>Welcome back</Text>
+                <Text style={styles.title}>Profile</Text>
+              </View>
+              <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn}>
+                <Ionicons name="log-out" size={20} color={Colors.red} />
+              </TouchableOpacity>
             </View>
-          </View>
 
-          <View style={styles.statsRow}>
-            <View style={styles.statItem}>
-              <Text style={styles.statValue}>{history.length}</Text>
-              <Text style={styles.statLabel}>Scanned</Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Text style={styles.statValue}>{favorites.length}</Text>
-              <Text style={styles.statLabel}>Favorites</Text>
-            </View>
-          </View>
-
-          <Text style={styles.sectionTitle}>Personal Info</Text>
-          <View style={styles.card}>
-            <FieldRow
-              label="Name"
-              value={form.name}
-              onChangeText={(v) => update("name", v)}
-              placeholder="Your name"
-            />
-            <View style={styles.fieldRow}>
-              <View style={styles.halfField}>
-                <Text style={styles.fieldLabel}>Age</Text>
-                <TextInput
-                  value={form.age}
-                  onChangeText={(v) => update("age", v)}
-                  placeholder="--"
-                  placeholderTextColor={Colors.textMuted}
-                  style={styles.fieldInput}
-                  keyboardType="number-pad"
-                />
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Personal Information</Text>
+              <View style={styles.fieldRow}>
+                <View style={styles.field}>
+                  <Text style={styles.fieldLabel}>Name</Text>
+                  <TextInput
+                    value={form.name || ""}
+                    onChangeText={(v) => update("name", v)}
+                    style={styles.fieldInput}
+                    placeholder="Enter your name"
+                    placeholderTextColor={Colors.textMuted}
+                  />
+                </View>
+                <View style={styles.field}>
+                  <Text style={styles.fieldLabel}>Age</Text>
+                  <TextInput
+                    value={form.age || ""}
+                    onChangeText={(v) => update("age", v)}
+                    style={styles.fieldInput}
+                    placeholder="Age"
+                    placeholderTextColor={Colors.textMuted}
+                    keyboardType="number-pad"
+                  />
+                </View>
               </View>
-              <View style={styles.halfField}>
-                <Text style={styles.fieldLabel}>Gender</Text>
-                <TextInput
-                  value={form.gender}
-                  onChangeText={(v) => update("gender", v)}
-                  placeholder="--"
-                  placeholderTextColor={Colors.textMuted}
-                  style={styles.fieldInput}
-                />
+              <View style={styles.fieldRow}>
+                <View style={styles.field}>
+                  <Text style={styles.fieldLabel}>Gender</Text>
+                  <TextInput
+                    value={form.gender || ""}
+                    onChangeText={(v) => update("gender", v)}
+                    style={styles.fieldInput}
+                    placeholder="Gender"
+                    placeholderTextColor={Colors.textMuted}
+                  />
+                </View>
+                <View style={styles.field}>
+                  <Text style={styles.fieldLabel}>Height (cm)</Text>
+                  <TextInput
+                    value={form.height || ""}
+                    onChangeText={(v) => update("height", v)}
+                    style={styles.fieldInput}
+                    placeholder="Height"
+                    placeholderTextColor={Colors.textMuted}
+                    keyboardType="number-pad"
+                  />
+                </View>
               </View>
-            </View>
-            <View style={styles.fieldRow}>
-              <View style={styles.halfField}>
-                <Text style={styles.fieldLabel}>Height (cm)</Text>
-                <TextInput
-                  value={form.height}
-                  onChangeText={(v) => update("height", v)}
-                  placeholder="--"
-                  placeholderTextColor={Colors.textMuted}
-                  style={styles.fieldInput}
-                  keyboardType="number-pad"
-                />
-              </View>
-              <View style={styles.halfField}>
+              <View style={styles.field}>
                 <Text style={styles.fieldLabel}>Weight (kg)</Text>
                 <TextInput
-                  value={form.weight}
+                  value={form.weight || ""}
                   onChangeText={(v) => update("weight", v)}
-                  placeholder="--"
-                  placeholderTextColor={Colors.textMuted}
                   style={styles.fieldInput}
+                  placeholder="Weight"
+                  placeholderTextColor={Colors.textMuted}
                   keyboardType="number-pad"
                 />
               </View>
             </View>
-          </View>
 
-          <Text style={styles.sectionTitle}>Allergies</Text>
-          <View style={styles.chipGrid}>
-            {ALLERGEN_OPTIONS.map((a) => (
-              <Pressable
-                key={a}
-                onPress={() => toggleArrayItem("allergies", a)}
-                style={[
-                  styles.chip,
-                  form.allergies.includes(a) && styles.chipActive,
-                ]}
+            {renderSection("Allergies", form.allergies || [], "allergies")}
+            {renderSection(
+              "Health Conditions",
+              form.conditions || [],
+              "conditions",
+            )}
+            {renderSection(
+              "Dietary Preferences",
+              form.dietary_restrictions || [],
+              "dietary_restrictions",
+            )}
+
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Notes</Text>
+              <View style={styles.notesContainer}>
+                <TextInput
+                  value={form.notes || ""}
+                  onChangeText={(v) => update("notes", v)}
+                  placeholder="Any additional health notes..."
+                  placeholderTextColor={Colors.textMuted}
+                  style={styles.notesInput}
+                  multiline
+                  numberOfLines={4}
+                  textAlignVertical="top"
+                />
+              </View>
+            </View>
+
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Health Report</Text>
+              <TouchableOpacity
+                onPress={pickHealthReport}
+                style={styles.uploadButton}
               >
-                <Text
-                  style={[
-                    styles.chipText,
-                    form.allergies.includes(a) && styles.chipTextActive,
-                  ]}
-                >
-                  {a}
+                <Ionicons
+                  name="document-text-outline"
+                  size={20}
+                  color={Colors.emerald}
+                />
+                <Text style={styles.uploadButtonText}>
+                  Upload Health Report
                 </Text>
-              </Pressable>
-            ))}
-          </View>
+              </TouchableOpacity>
+              {healthReport && (
+                <View style={styles.uploadedFile}>
+                  <Ionicons
+                    name="checkmark-circle"
+                    size={16}
+                    color={Colors.emerald}
+                  />
+                  <Text style={styles.uploadedFileName}>{healthReport}</Text>
+                </View>
+              )}
+            </View>
 
-          <Text style={styles.sectionTitle}>Health Conditions</Text>
-          <View style={styles.chipGrid}>
-            {CONDITION_OPTIONS.map((c) => (
-              <Pressable
-                key={c}
-                onPress={() => toggleArrayItem("conditions", c)}
-                style={[
-                  styles.chip,
-                  form.conditions.includes(c) && styles.chipActive,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.chipText,
-                    form.conditions.includes(c) && styles.chipTextActive,
-                  ]}
+            {dirty && (
+              <TouchableOpacity onPress={handleSave} style={styles.saveButton}>
+                <Text style={styles.saveBtnText}>Save Changes</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+
+      {/* Add/Manage Item Modal - FIXED WITH KEYBOARDAVOIDINGVIEW */}
+      <Modal
+        visible={modalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => {
+          setModalVisible(false);
+          setCustomInputVisible(false);
+          setCustomInput("");
+        }}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalKeyboardView}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => {
+              setModalVisible(false);
+              setCustomInputVisible(false);
+              setCustomInput("");
+            }}
+          >
+            <TouchableOpacity
+              activeOpacity={1}
+              onPress={(e) => e.stopPropagation()}
+              style={styles.modalContent}
+            >
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>{getModalTitle()}</Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    setModalVisible(false);
+                    setCustomInputVisible(false);
+                    setCustomInput("");
+                  }}
                 >
-                  {c}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
+                  <Ionicons
+                    name="close"
+                    size={24}
+                    color={Colors.textSecondary}
+                  />
+                </TouchableOpacity>
+              </View>
 
-          <Text style={styles.sectionTitle}>Dietary Preferences</Text>
-          <View style={styles.chipGrid}>
-            {DIET_OPTIONS.map((d) => (
-              <Pressable
-                key={d}
-                onPress={() => toggleArrayItem("dietary_restrictions", d)}
-                style={[
-                  styles.chip,
-                  form.dietary_restrictions.includes(d) && styles.chipActive,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.chipText,
-                    form.dietary_restrictions.includes(d) &&
-                      styles.chipTextActive,
-                  ]}
-                >
-                  {d}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
+              {!customInputVisible ? (
+                <>
+                  <ScrollView
+                    style={styles.modalScroll}
+                    keyboardShouldPersistTaps="handled"
+                  >
+                    <Text style={styles.modalSubtitle}>Common Options</Text>
+                    {getModalOptions().map((option) => {
+                      const isSelected = (
+                        form[modalType] as string[]
+                      )?.includes(option);
+                      return (
+                        <TouchableOpacity
+                          key={option}
+                          style={[
+                            styles.modalOption,
+                            isSelected && styles.modalOptionSelected,
+                          ]}
+                          onPress={() => addNewItem(option)}
+                        >
+                          <Text
+                            style={[
+                              styles.modalOptionText,
+                              isSelected && styles.modalOptionTextSelected,
+                            ]}
+                          >
+                            {option}
+                          </Text>
+                          {isSelected && (
+                            <Ionicons
+                              name="checkmark-circle"
+                              size={20}
+                              color={Colors.emerald}
+                            />
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
 
-          <Text style={styles.sectionTitle}>Notes</Text>
-          <TextInput
-            value={form.notes}
-            onChangeText={(v) => update("notes", v)}
-            placeholder="Any additional health notes..."
-            placeholderTextColor={Colors.textMuted}
-            style={styles.notesInput}
-            multiline
-            numberOfLines={4}
-            textAlignVertical="top"
-          />
+                    {/* Show custom items that aren't in the predefined list */}
+                    {(form[modalType] as string[])
+                      ?.filter((item) => !getModalOptions().includes(item))
+                      .map((customItem, index) => (
+                        <TouchableOpacity
+                          key={`custom-${index}`}
+                          style={[
+                            styles.modalOption,
+                            styles.modalOptionSelected,
+                          ]}
+                          onPress={() => addNewItem(customItem)}
+                        >
+                          <View style={styles.customItemContainer}>
+                            <Text
+                              style={[
+                                styles.modalOptionText,
+                                styles.modalOptionTextSelected,
+                              ]}
+                            >
+                              {customItem}
+                            </Text>
+                            <Text style={styles.customLabel}>Custom</Text>
+                          </View>
+                          <Ionicons
+                            name="checkmark-circle"
+                            size={20}
+                            color={Colors.emerald}
+                          />
+                        </TouchableOpacity>
+                      ))}
+                  </ScrollView>
 
-          {dirty && (
-            <Pressable onPress={handleSave} style={styles.saveButton}>
-              <Ionicons name="checkmark" size={20} color="#fff" />
-              <Text style={styles.saveBtnText}>Save Profile</Text>
-            </Pressable>
-          )}
-        </View>
-      </ScrollView>
-    </View>
-  );
-}
-
-function FieldRow({
-  label,
-  value,
-  onChangeText,
-  placeholder,
-}: {
-  label: string;
-  value: string;
-  onChangeText: (v: string) => void;
-  placeholder: string;
-}) {
-  return (
-    <View style={styles.field}>
-      <Text style={styles.fieldLabel}>{label}</Text>
-      <TextInput
-        value={value}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor={Colors.textMuted}
-        style={styles.fieldInput}
-      />
+                  <TouchableOpacity
+                    style={styles.customButton}
+                    onPress={() => setCustomInputVisible(true)}
+                  >
+                    <Ionicons
+                      name="add-circle-outline"
+                      size={20}
+                      color={Colors.emerald}
+                    />
+                    <Text style={styles.customButtonText}>Add Custom Item</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <View style={styles.customInputContainer}>
+                  <Text style={styles.customInputLabel}>
+                    Enter your custom{" "}
+                    {modalType === "allergies"
+                      ? "allergy"
+                      : modalType === "conditions"
+                        ? "health condition"
+                        : "dietary preference"}
+                  </Text>
+                  <TextInput
+                    value={customInput}
+                    onChangeText={setCustomInput}
+                    style={styles.customInputField}
+                    placeholder={`e.g., ${modalType === "allergies" ? "Latex" : modalType === "conditions" ? "Thyroid issues" : "Paleo"}`}
+                    placeholderTextColor={Colors.textMuted}
+                    autoFocus
+                  />
+                  <View style={styles.customInputButtons}>
+                    <TouchableOpacity
+                      style={styles.cancelButton}
+                      onPress={() => {
+                        setCustomInputVisible(false);
+                        setCustomInput("");
+                      }}
+                    >
+                      <Text style={styles.cancelButtonText}>Cancel</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.addCustomButton,
+                        !customInput.trim() && styles.addCustomButtonDisabled,
+                      ]}
+                      onPress={handleAddCustom}
+                      disabled={!customInput.trim()}
+                    >
+                      <Text style={styles.addCustomButtonText}>Add</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.bg },
-  scroll: { flex: 1 },
-  scrollContent: { paddingHorizontal: 20 },
+  container: {
+    flex: 1,
+    backgroundColor: Colors.bg,
+  },
+  keyboardView: {
+    flex: 1,
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 20,
+  },
   headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 20,
-  },
-  headerActions: { flexDirection: "row", gap: 12, alignItems: "center" },
-  title: {
-    color: Colors.textPrimary,
-    fontSize: 24,
-    fontWeight: "700" as const,
-  },
-  saveBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.emerald,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  logoutBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.bgCard,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  statsRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 24,
-    backgroundColor: Colors.bgCard,
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: Colors.border,
     marginBottom: 24,
   },
-  statItem: { alignItems: "center", gap: 4 },
-  statValue: {
+  greeting: { color: Colors.textSecondary, fontSize: 14, marginBottom: 2 },
+  title: {
     color: Colors.textPrimary,
-    fontSize: 24,
+    fontSize: 26,
     fontWeight: "700" as const,
   },
-  statLabel: { color: Colors.textSecondary, fontSize: 12 },
-  statDivider: { width: 1, height: 36, backgroundColor: Colors.border },
+  logoutBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Colors.bgCard,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  section: { marginBottom: 24 },
+  sectionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
   sectionTitle: {
     color: Colors.textPrimary,
-    fontSize: 17,
-    fontWeight: "700" as const,
-    marginBottom: 10,
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  addButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: Colors.emeraldMuted,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptyText: {
+    color: Colors.textMuted,
+    fontSize: 14,
+    fontStyle: "italic",
+    marginTop: 4,
+  },
+  pillContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
     marginTop: 8,
   },
-  card: {
-    backgroundColor: Colors.bgCard,
-    borderRadius: 16,
-    padding: 16,
-    gap: 12,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    marginBottom: 8,
+  pill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(139, 92, 92, 0.3)",
+    borderRadius: 20,
+    paddingVertical: 8,
+    paddingLeft: 14,
+    paddingRight: 10,
+    gap: 6,
   },
-  field: { gap: 6 },
+  pillText: {
+    color: Colors.textPrimary,
+    fontSize: 13,
+    fontWeight: "500",
+  },
+  pillClose: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   fieldRow: { flexDirection: "row", gap: 12 },
-  halfField: { flex: 1, gap: 6 },
+  field: { flex: 1, marginBottom: 16 },
   fieldLabel: {
     color: Colors.textSecondary,
-    fontSize: 12,
-    fontWeight: "600" as const,
+    fontSize: 14,
+    marginBottom: 6,
+    fontWeight: "500",
   },
   fieldInput: {
-    backgroundColor: Colors.bgInput,
+    backgroundColor: Colors.bgCard,
+    borderWidth: 1,
+    borderColor: Colors.border,
     borderRadius: 10,
-    padding: 12,
-    color: Colors.textPrimary,
-    fontSize: 15,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  chipGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 8 },
-  chip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: Colors.bgCard,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  chipActive: {
-    backgroundColor: Colors.emeraldMuted,
-    borderColor: Colors.emerald,
-  },
-  chipText: {
-    color: Colors.textSecondary,
-    fontSize: 13,
-    fontWeight: "500" as const,
-  },
-  chipTextActive: { color: Colors.emerald },
-  notesInput: {
-    backgroundColor: Colors.bgCard,
-    borderRadius: 14,
-    padding: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     color: Colors.textPrimary,
     fontSize: 14,
+  },
+  notesContainer: {
+    backgroundColor: Colors.bgCard,
     borderWidth: 1,
     borderColor: Colors.border,
+    borderRadius: 10,
+    padding: 12,
     minHeight: 100,
+  },
+  notesInput: {
+    color: Colors.textPrimary,
+    fontSize: 14,
+    minHeight: 80,
+    textAlignVertical: "top",
+  },
+  uploadButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: Colors.bgCard,
+    borderWidth: 1,
+    borderColor: Colors.emerald,
+    borderRadius: 10,
+    padding: 12,
+    justifyContent: "center",
+  },
+  uploadButtonText: {
+    color: Colors.emerald,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  uploadedFile: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: Colors.emeraldMuted,
+    borderRadius: 8,
+    padding: 8,
+    marginTop: 8,
+  },
+  uploadedFileName: {
+    color: Colors.emerald,
+    fontSize: 12,
+    fontWeight: "500",
   },
   saveButton: {
     flexDirection: "row",
@@ -446,4 +708,148 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   saveBtnText: { color: "#fff", fontSize: 16, fontWeight: "600" as const },
+  modalKeyboardView: {
+    flex: 1,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "flex-end",
+  },
+  modalContent: {
+    backgroundColor: Colors.bgCard,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: "80%",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  modalTitle: {
+    color: Colors.textPrimary,
+    fontSize: 18,
+    fontWeight: "600",
+  },
+  modalSubtitle: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: Colors.bg,
+  },
+  modalScroll: {
+    maxHeight: 400,
+  },
+  modalOption: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  modalOptionSelected: {
+    backgroundColor: Colors.emeraldMuted,
+  },
+  modalOptionText: {
+    color: Colors.textPrimary,
+    fontSize: 16,
+  },
+  modalOptionTextSelected: {
+    color: Colors.emerald,
+    fontWeight: "600",
+  },
+  customItemContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  customLabel: {
+    fontSize: 10,
+    color: Colors.emerald,
+    backgroundColor: Colors.bg,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    fontWeight: "600",
+    textTransform: "uppercase",
+  },
+  customButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    backgroundColor: Colors.bg,
+  },
+  customButtonText: {
+    color: Colors.emerald,
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  customInputContainer: {
+    padding: 20,
+    paddingBottom: 30,
+  },
+  customInputLabel: {
+    color: Colors.textPrimary,
+    fontSize: 14,
+    marginBottom: 12,
+    fontWeight: "500",
+  },
+  customInputField: {
+    backgroundColor: Colors.bg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    color: Colors.textPrimary,
+    fontSize: 16,
+    marginBottom: 16,
+  },
+  customInputButtons: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  cancelButton: {
+    flex: 1,
+    backgroundColor: Colors.bgCard,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  cancelButtonText: {
+    color: Colors.textSecondary,
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  addCustomButton: {
+    flex: 1,
+    backgroundColor: Colors.emerald,
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  addCustomButtonDisabled: {
+    backgroundColor: Colors.textMuted,
+    opacity: 0.5,
+  },
+  addCustomButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
 });

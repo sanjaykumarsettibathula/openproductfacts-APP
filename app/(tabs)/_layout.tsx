@@ -1,11 +1,12 @@
 import { isLiquidGlassAvailable } from "expo-glass-effect";
-import { Tabs } from "expo-router";
+import { Tabs, router } from "expo-router";
 import { NativeTabs, Icon, Label } from "expo-router/unstable-native-tabs";
 import { BlurView } from "expo-blur";
 import { Platform, StyleSheet, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import React from "react";
+import React, { useEffect } from "react";
 import Colors from "@/constants/colors";
+import { isLoggedIn } from "@/lib/auth";
 
 function NativeTabLayout() {
   return (
@@ -31,15 +32,6 @@ function NativeTabLayout() {
       <NativeTabs.Trigger name="profile">
         <Icon sf={{ default: "person", selected: "person.fill" }} />
         <Label>Profile</Label>
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="chat">
-        <Icon
-          sf={{
-            default: "bubble.left.and.bubble.right",
-            selected: "bubble.left.and.bubble.right.fill",
-          }}
-        />
-        <Label>AI Chat</Label>
       </NativeTabs.Trigger>
     </NativeTabs>
   );
@@ -122,20 +114,22 @@ function ClassicTabLayout() {
           ),
         }}
       />
-      <Tabs.Screen
-        name="chat"
-        options={{
-          title: "AI Chat",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="chatbubble-ellipses" size={size} color={color} />
-          ),
-        }}
-      />
     </Tabs>
   );
 }
 
 export default function TabLayout() {
+  useEffect(() => {
+    const checkAuth = async () => {
+      const loggedIn = await isLoggedIn();
+      if (!loggedIn) {
+        router.replace("/login-new");
+      }
+    };
+
+    checkAuth();
+  }, []);
+
   if (isLiquidGlassAvailable()) {
     return <NativeTabLayout />;
   }

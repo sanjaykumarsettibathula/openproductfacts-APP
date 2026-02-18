@@ -40,7 +40,15 @@ export default function RootLayout() {
                   name="list/[id]"
                   options={{ headerShown: false }}
                 />
-                <Stack.Screen name="login" options={{ headerShown: false }} />
+                <Stack.Screen
+                  name="login-new"
+                  options={{ headerShown: false }}
+                />
+                <Stack.Screen
+                  name="health-info"
+                  options={{ headerShown: false }}
+                />
+                <Stack.Screen name="chat" options={{ headerShown: false }} />
               </Stack>
             </DataProvider>
           </KeyboardProvider>
