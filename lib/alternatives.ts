@@ -1,385 +1,468 @@
 import { ScannedProduct } from "./storage";
 
 const OPENFOODFACTS_API = "https://world.openfoodfacts.org/api/v2";
+const GEMINI_TEXT_MODEL = "gemini-2.0-flash-lite";
+const GEMINI_FALLBACK_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash"];
+const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
 export interface AlternativeProduct {
   barcode: string;
   name: string;
   brand: string;
-  image_url: string;
+  nutri_score: string;
+  nova_group: number;
+  image_url?: string;
+  reason: string;
+}
+
+// --------------------------------------------------------------------------
+// HERMES-SAFE FETCH WITH TIMEOUT
+// --------------------------------------------------------------------------
+function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs = 10000,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { ...options, signal: controller.signal }).finally(() =>
+    clearTimeout(timer),
+  );
+}
+
+// --------------------------------------------------------------------------
+// ROBUST JSON ARRAY EXTRACTOR
+//
+// Handles all Gemini response variants:
+//   - Perfect bare array
+//   - Array wrapped in object {"alternatives": [...]}
+//   - Array truncated mid-token by maxOutputTokens
+//   - Trailing whitespace / invisible unicode after closing ]
+//   - Long reason strings with commas, quotes, special chars
+// --------------------------------------------------------------------------
+function extractJSONArray(raw: string): any[] | null {
+  // Strip markdown fences
+  const cleaned = raw
+    .replace(/^```json\s*/im, "")
+    .replace(/^```\s*/im, "")
+    .replace(/```\s*$/im, "")
+    .trim();
+
+  // Strategy 1: direct parse — works when response is perfect
+  try {
+    const parsed = JSON.parse(cleaned);
+    if (Array.isArray(parsed)) return parsed;
+    if (parsed && typeof parsed === "object") {
+      for (const key of [
+        "alternatives",
+        "products",
+        "suggestions",
+        "items",
+        "results",
+        "data",
+      ]) {
+        if (Array.isArray(parsed[key])) return parsed[key];
+      }
+      for (const val of Object.values(parsed)) {
+        if (Array.isArray(val)) return val as any[];
+      }
+    }
+  } catch {}
+
+  // Strategy 2: find the balanced [ ... ] span character by character
+  // Immune to trailing text/invisible chars after the array
+  const startIdx = cleaned.indexOf("[");
+  if (startIdx === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+
+  for (let i = startIdx; i < cleaned.length; i++) {
+    const ch = cleaned[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (ch === "\\") {
+      escape = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (ch === "[") depth++;
+    else if (ch === "]") {
+      depth--;
+      if (depth === 0) {
+        const slice = cleaned.slice(startIdx, i + 1);
+        try {
+          const parsed = JSON.parse(slice);
+          if (Array.isArray(parsed)) return parsed;
+        } catch {}
+        break; // slice failed, fall through to repair
+      }
+    }
+  }
+
+  // Strategy 3: truncation repair
+  // Gemini cut the response mid-token — close open strings, objects, arrays
+  const fromStart = cleaned.slice(startIdx);
+  try {
+    let arrDepth = 0,
+      objDepth = 0;
+    let inStr = false,
+      esc = false;
+
+    for (const ch of fromStart) {
+      if (esc) {
+        esc = false;
+        continue;
+      }
+      if (ch === "\\") {
+        esc = true;
+        continue;
+      }
+      if (ch === '"') {
+        inStr = !inStr;
+        continue;
+      }
+      if (inStr) continue;
+      if (ch === "[") arrDepth++;
+      else if (ch === "]") arrDepth--;
+      else if (ch === "{") objDepth++;
+      else if (ch === "}") objDepth--;
+    }
+
+    let repaired = fromStart.trimEnd();
+
+    // Close open string
+    if (inStr) repaired += '"';
+
+    // Remove trailing comma before closing (invalid JSON)
+    repaired = repaired.replace(/,\s*$/, "");
+
+    // Close open objects
+    for (let i = 0; i < objDepth; i++) repaired += "}";
+
+    // Close open arrays
+    for (let i = 0; i < arrDepth; i++) repaired += "]";
+
+    const parsed = JSON.parse(repaired);
+    if (Array.isArray(parsed)) {
+      console.log(`✅ Repaired truncated JSON array (${parsed.length} items)`);
+      return parsed;
+    }
+  } catch (e) {
+    console.warn("⚠️ Truncation repair also failed:", (e as any)?.message);
+  }
+
+  return null;
+}
+
+function normaliseScore(val: any): string {
+  if (!val) return "unknown";
+  const upper = String(val).toUpperCase().trim().charAt(0);
+  return ["A", "B", "C", "D", "E"].includes(upper) ? upper : "unknown";
+}
+
+// --------------------------------------------------------------------------
+// GEMINI CALLER
+// Key fix: maxOutputTokens raised to 4096 so 4-item arrays never get cut off
+// --------------------------------------------------------------------------
+async function callGemini(
+  parts: object[],
+  maxTokens = 4096,
+): Promise<string | null> {
+  const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
+  if (!apiKey) {
+    console.warn("⚠️ EXPO_PUBLIC_GEMINI_API_KEY not set");
+    return null;
+  }
+
+  const modelsToTry = [
+    GEMINI_TEXT_MODEL,
+    ...GEMINI_FALLBACK_MODELS.filter((m) => m !== GEMINI_TEXT_MODEL),
+  ];
+
+  for (const model of modelsToTry) {
+    const url = `${GEMINI_BASE}/${model}:generateContent?key=${apiKey}`;
+    const body = {
+      contents: [{ parts }],
+      generationConfig: { temperature: 0.2, maxOutputTokens: maxTokens },
+    };
+    try {
+      console.log(`🤖 Alternatives — trying Gemini: ${model}`);
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.status === 429 || res.status === 404) {
+        console.warn(
+          `⚠️ Gemini [${model}] HTTP ${res.status} — trying next...`,
+        );
+        continue;
+      }
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (data.error) {
+        console.warn(`⚠️ Gemini [${model}] body error:`, data.error.message);
+        continue;
+      }
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!text) continue;
+      console.log(`✅ Alternatives Gemini [${model}] succeeded`);
+      return text;
+    } catch (err: any) {
+      if (err.message?.includes("429") || err.message?.includes("404"))
+        continue;
+      console.warn(`⚠️ Gemini [${model}] threw:`, err?.message);
+      continue;
+    }
+  }
+  return null;
+}
+
+// --------------------------------------------------------------------------
+// STEP 1: AI suggests healthier alternatives dynamically
+// --------------------------------------------------------------------------
+interface AIAlternativeSuggestion {
+  search_query: string;
+  name: string;
+  brand: string;
   nutri_score: string;
   nova_group: number;
   reason: string;
 }
 
-/**
- * Extract main product type (remove brand, size, flavor)
- * Example: "Cadbury Dairy Milk Chocolate 100g" → "chocolate"
- */
-function extractProductType(product: ScannedProduct): string {
-  const name = product.name.toLowerCase();
-  const categories = product.categories.toLowerCase();
+async function getAISuggestedAlternatives(
+  product: ScannedProduct,
+): Promise<AIAlternativeSuggestion[]> {
+  const nutriScore = normaliseScore(product.nutri_score);
 
-  // Common product types to look for
-  const productTypes = [
-    "chocolate",
-    "cookies",
-    "biscuits",
-    "chips",
-    "crisps",
-    "soda",
-    "cola",
-    "juice",
-    "water",
-    "energy drink",
-    "ice cream",
-    "yogurt",
-    "milk",
-    "cheese",
-    "noodles",
-    "pasta",
-    "cereal",
-    "bread",
-    "candy",
-    "gummies",
-    "snack bar",
-    "coffee",
-    "tea",
-  ];
+  // Tell AI what score range to target based on original score
+  const targetScores =
+    nutriScore === "C" ? "A or B only" : "A, B, or C (never D or E)";
 
-  // Check name first
-  for (const type of productTypes) {
-    if (name.includes(type)) {
-      return type;
-    }
+  const prompt = `You are a nutrition expert. Suggest 4 healthier alternatives for this food product.
+
+Product: "${product.name}"
+Brand: "${product.brand || "unknown"}"
+Category: "${product.categories || "unknown"}"
+Nutri-Score: ${nutriScore} (target alternatives with Nutri-Score: ${targetScores})
+NOVA: ${product.nova_group || "unknown"}
+
+Rules:
+1. Same food type and purpose ONLY (chips→chips, chocolate→chocolate, cola→cola, noodles→noodles)
+2. Suggested Nutri-Score MUST be ${targetScores}
+3. Real products that exist in India or globally
+4. Different brands
+5. search_query: brand + product name, max 5 words, concise and searchable
+6. reason: one short sentence, max 10 words
+
+Return ONLY a JSON array. Start with [ end with ]. No text outside the array. No explanation.
+
+[{"search_query":"","name":"","brand":"","nutri_score":"","nova_group":0,"reason":""}]`;
+
+  // Use 4096 tokens so 4-item arrays with reason strings never get truncated
+  const raw = await callGemini([{ text: prompt }], 4096);
+  if (!raw) return [];
+
+  console.log(`🔍 Raw AI response (first 400 chars): ${raw.slice(0, 400)}`);
+
+  const arr = extractJSONArray(raw);
+
+  if (!arr) {
+    console.warn(
+      "⚠️ Could not extract array from AI response:",
+      raw.slice(0, 300),
+    );
+    return [];
   }
 
-  // Check categories
-  for (const type of productTypes) {
-    if (categories.includes(type)) {
-      return type;
-    }
-  }
-
-  // Try to extract from categories field
-  if (categories.includes("beverages")) return "beverage";
-  if (categories.includes("snacks")) return "snack";
-  if (categories.includes("dairy")) return "dairy";
-  if (categories.includes("sweets")) return "candy";
-
-  console.warn(`⚠️ Could not extract product type from: ${product.name}`);
-  return "snack"; // fallback
-}
-
-/**
- * Generate smart search queries based on the actual product
- * This is DYNAMIC, not static!
- */
-function generateSmartSearchQueries(product: ScannedProduct): string[] {
-  const queries: string[] = [];
-  const brand = product.brand.toLowerCase();
-  const name = product.name.toLowerCase();
-  const productType = extractProductType(product);
-
-  console.log(`🔍 Product analysis:
-    Brand: ${brand}
-    Name: ${name}
-    Type: ${productType}`);
-
-  // Strategy 1: Same brand, healthier versions
-  // Example: "Cadbury Dairy Milk" → "Cadbury dark chocolate"
-  if (brand && brand !== "unknown brand") {
-    queries.push(`${brand} ${productType} low sugar`);
-    queries.push(`${brand} ${productType} reduced fat`);
-    queries.push(`${brand} ${productType} light`);
-  }
-
-  // Strategy 2: Same product type, but healthier keywords
-  queries.push(`${productType} low sugar`);
-  queries.push(`${productType} reduced fat`);
-  queries.push(`${productType} organic`);
-  queries.push(`${productType} natural`);
-  queries.push(`${productType} whole grain`);
-
-  // Strategy 3: Category-specific healthier terms
-  if (productType.includes("chocolate")) {
-    queries.push("dark chocolate 70%");
-    queries.push("dark chocolate 85%");
-    queries.push("sugar-free chocolate");
-  } else if (productType.includes("cola") || productType.includes("soda")) {
-    queries.push("zero sugar cola");
-    queries.push("diet soda");
-    queries.push("stevia soda");
-  } else if (productType.includes("chips") || productType.includes("crisps")) {
-    queries.push("baked chips");
-    queries.push("vegetable chips");
-    queries.push("lentil chips");
-  } else if (
-    productType.includes("cookies") ||
-    productType.includes("biscuits")
-  ) {
-    queries.push("oat cookies");
-    queries.push("whole wheat biscuits");
-    queries.push("digestive biscuits");
-  } else if (productType.includes("ice cream")) {
-    queries.push("low fat ice cream");
-    queries.push("frozen yogurt");
-  } else if (productType.includes("juice")) {
-    queries.push("100% juice no sugar");
-    queries.push("fresh pressed juice");
-  }
-
-  // Remove duplicates
-  const uniqueQueries = [...new Set(queries)];
-  console.log(
-    `📋 Generated ${uniqueQueries.length} search queries:`,
-    uniqueQueries.slice(0, 5),
+  const valid = arr.filter(
+    (item: any) =>
+      typeof item.search_query === "string" &&
+      item.search_query.trim().length > 2 &&
+      typeof item.name === "string" &&
+      item.name.trim().length > 0,
   );
 
-  return uniqueQueries.slice(0, 8); // Limit to 8 searches max
+  console.log(
+    `🤖 AI suggested ${valid.length} valid alternatives for "${product.name}"`,
+  );
+  return valid;
 }
 
-/**
- * Check if two products are in the same category
- * This prevents water bottles appearing for chocolate searches!
- */
-function isSameCategory(
-  originalProduct: ScannedProduct,
-  alternativeProduct: any,
-): boolean {
-  const origType = extractProductType(originalProduct);
-  const origCategories = originalProduct.categories.toLowerCase();
+// --------------------------------------------------------------------------
+// STEP 2: Verify each suggestion against OFF
+// --------------------------------------------------------------------------
+async function verifyWithOFF(
+  suggestion: AIAlternativeSuggestion,
+): Promise<AlternativeProduct> {
+  try {
+    const params = new URLSearchParams({
+      search_terms: suggestion.search_query,
+      page: "1",
+      page_size: "5",
+      json: "1",
+      fields:
+        "code,product_name,brands,nutriscore_grade,nova_group,image_url,image_front_url",
+    });
 
-  const altName = (
-    alternativeProduct.product_name ||
-    alternativeProduct.product_name_en ||
-    ""
-  ).toLowerCase();
-  const altCategories = (alternativeProduct.categories || "").toLowerCase();
-
-  // Direct product type match
-  if (altName.includes(origType) || altCategories.includes(origType)) {
-    return true;
-  }
-
-  // Category-based matching
-  const categoryGroups = [
-    ["chocolate", "candy", "sweets", "confectionery"],
-    ["cola", "soda", "carbonated", "soft drink", "beverage"],
-    ["chips", "crisps", "snacks"],
-    ["cookies", "biscuits"],
-    ["juice", "fruit drink"],
-    ["water", "mineral water"],
-    ["ice cream", "frozen dessert"],
-    ["yogurt", "dairy"],
-    ["noodles", "pasta"],
-    ["cereal", "breakfast"],
-  ];
-
-  for (const group of categoryGroups) {
-    const origInGroup = group.some(
-      (term) => origType.includes(term) || origCategories.includes(term),
-    );
-    const altInGroup = group.some(
-      (term) => altName.includes(term) || altCategories.includes(term),
+    const res = await fetchWithTimeout(
+      `${OPENFOODFACTS_API}/search?${params.toString()}`,
+      {},
+      10000,
     );
 
-    if (origInGroup && altInGroup) {
-      return true;
+    if (!res.ok) throw new Error(`OFF HTTP ${res.status}`);
+
+    const data = await res.json();
+    const products: any[] = data.products || [];
+
+    if (products.length > 0) {
+      const queryWords = suggestion.search_query
+        .toLowerCase()
+        .split(/\s+/)
+        .filter((w) => w.length > 2);
+
+      const scored = products
+        .filter((p: any) => p.product_name?.trim())
+        .map((p: any) => {
+          const combined = `${(p.brands || "").toLowerCase()} ${p.product_name.toLowerCase()}`;
+          const matchCount = queryWords.filter((w) =>
+            combined.includes(w),
+          ).length;
+          return { p, score: matchCount };
+        })
+        .sort((a, b) => b.score - a.score);
+
+      const best = scored[0];
+      if (best && best.score >= 1) {
+        const offNutri = normaliseScore(best.p.nutriscore_grade);
+        console.log(
+          `✅ OFF verified: "${best.p.product_name}" nutri=${offNutri}`,
+        );
+        return {
+          barcode: best.p.code || "",
+          name: best.p.product_name,
+          brand: best.p.brands?.split(",")[0]?.trim() || suggestion.brand,
+          nutri_score:
+            offNutri !== "unknown"
+              ? offNutri
+              : normaliseScore(suggestion.nutri_score),
+          nova_group: best.p.nova_group || suggestion.nova_group || 0,
+          image_url: best.p.image_url || best.p.image_front_url || "",
+          reason: suggestion.reason,
+        };
+      }
     }
+
+    console.log(
+      `ℹ️ OFF: no match for "${suggestion.search_query}" — using AI data`,
+    );
+  } catch (err: any) {
+    console.warn(
+      `⚠️ OFF verify failed for "${suggestion.search_query}":`,
+      err?.message,
+    );
   }
 
-  return false;
+  // Fallback: use AI suggestion data directly
+  return {
+    barcode: "",
+    name: suggestion.name,
+    brand: suggestion.brand || "",
+    nutri_score: normaliseScore(suggestion.nutri_score),
+    nova_group: suggestion.nova_group || 0,
+    image_url: "",
+    reason: suggestion.reason,
+  };
 }
 
-/**
- * Calculate health score (higher = healthier)
- */
-function calculateHealthScore(product: any): number {
-  let score = 0;
+// --------------------------------------------------------------------------
+// MAIN EXPORT
+// --------------------------------------------------------------------------
+const SCORE_RANK: Record<string, number> = {
+  A: 5,
+  B: 4,
+  C: 3,
+  D: 2,
+  E: 1,
+  unknown: 0,
+};
 
-  // Nutri-Score
-  const nutriScore = product.nutriscore_grade?.toUpperCase();
-  if (nutriScore === "A") score += 50;
-  else if (nutriScore === "B") score += 35;
-  else if (nutriScore === "C") score += 20;
-  else if (nutriScore === "D") score += 5;
-
-  // NOVA group
-  const nova = product.nova_group || 4;
-  if (nova === 1) score += 30;
-  else if (nova === 2) score += 20;
-  else if (nova === 3) score += 5;
-
-  // Nutrition values
-  const n = product.nutriments || {};
-
-  const sugar = n.sugars_100g || 0;
-  if (sugar < 5) score += 15;
-  else if (sugar < 10) score += 8;
-
-  const satFat = n["saturated-fat_100g"] || 0;
-  if (satFat < 2) score += 10;
-  else if (satFat < 5) score += 5;
-
-  const sodium = n.sodium_100g || 0;
-  if (sodium < 0.2) score += 10;
-  else if (sodium < 0.4) score += 5;
-
-  const fiber = n.fiber_100g || 0;
-  if (fiber > 6) score += 10;
-  else if (fiber > 3) score += 5;
-
-  const protein = n.proteins_100g || 0;
-  if (protein > 15) score += 10;
-  else if (protein > 10) score += 5;
-
-  // Organic label
-  const labels = (product.labels_tags || []).join(" ").toLowerCase();
-  if (labels.includes("organic") || labels.includes("bio")) score += 15;
-
-  return score;
-}
-
-/**
- * Determine improvement reason
- */
-function getImprovementReason(
-  original: ScannedProduct,
-  alternative: any,
-): string {
-  const origNutri = original.nutri_score?.toUpperCase();
-  const altNutri = alternative.nutriscore_grade?.toUpperCase();
-
-  if (altNutri && origNutri && altNutri < origNutri) {
-    return `Better Nutri-Score (${altNutri})`;
-  }
-
-  const origNova = original.nova_group || 4;
-  const altNova = alternative.nova_group || 4;
-  if (altNova < origNova) {
-    return "Less processed";
-  }
-
-  const origSugar = original.nutrition.sugars;
-  const altSugar = alternative.nutriments?.sugars_100g || 0;
-  if (origSugar > 10 && altSugar < origSugar * 0.7) {
-    return `${Math.round(((origSugar - altSugar) / origSugar) * 100)}% less sugar`;
-  }
-
-  const origFat = original.nutrition.saturated_fat;
-  const altFat = alternative.nutriments?.["saturated-fat_100g"] || 0;
-  if (origFat > 5 && altFat < origFat * 0.7) {
-    return "Lower saturated fat";
-  }
-
-  const labels = (alternative.labels_tags || []).join(" ").toLowerCase();
-  if (labels.includes("organic") || labels.includes("bio")) {
-    return "Organic ingredients";
-  }
-
-  return "Healthier option";
-}
-
-/**
- * Search for healthier alternatives - COMPLETELY DYNAMIC!
- */
 export async function searchHealthierAlternatives(
   product: ScannedProduct,
 ): Promise<AlternativeProduct[]> {
   try {
-    console.log(`🔍 Searching alternatives for: ${product.name}`);
+    const nutriScore = normaliseScore(product.nutri_score);
 
-    // Generate dynamic search queries based on THIS product
-    const queries = generateSmartSearchQueries(product);
+    // Only show alternatives for C, D, E or NOVA 4. A and B are already good.
+    const shouldTrigger =
+      ["C", "D", "E"].includes(nutriScore) || product.nova_group === 4;
 
-    const allResults: any[] = [];
-
-    for (const query of queries) {
-      try {
-        const url = `${OPENFOODFACTS_API}/search?search_terms=${encodeURIComponent(query)}&page=1&page_size=15&json=1&fields=code,product_name,product_name_en,brands,image_url,image_front_url,nutriments,nutriscore_grade,nova_group,labels_tags,categories`;
-
-        const response = await fetch(url);
-        if (!response.ok) continue;
-
-        const data = await response.json();
-        if (data.products && data.products.length > 0) {
-          allResults.push(...data.products);
-        }
-      } catch (err) {
-        console.warn(`Failed to search "${query}":`, err);
-      }
-    }
-
-    if (allResults.length === 0) {
-      console.log("❌ No alternatives found");
+    if (!shouldTrigger) {
+      console.log(
+        `ℹ️ No alternatives needed: nutri=${nutriScore} nova=${product.nova_group}`,
+      );
       return [];
     }
 
-    console.log(`✅ Found ${allResults.length} potential alternatives`);
-
-    // Calculate original score
-    const originalScore = calculateHealthScore({
-      nutriscore_grade: product.nutri_score,
-      nova_group: product.nova_group,
-      nutriments: {
-        sugars_100g: product.nutrition.sugars,
-        "saturated-fat_100g": product.nutrition.saturated_fat,
-        sodium_100g: product.nutrition.sodium,
-        fiber_100g: product.nutrition.fiber,
-        proteins_100g: product.nutrition.protein,
-      },
-    });
-
-    // Filter and score alternatives
-    const scoredAlternatives = allResults
-      .filter((alt) => {
-        // Must have name
-        if (!alt.product_name && !alt.product_name_en) return false;
-
-        // Must not be the same product
-        if (alt.code === product.barcode) return false;
-
-        // Must have nutrition data
-        if (!alt.nutriments) return false;
-
-        // 🔥 CRITICAL: Must be in the same category!
-        if (!isSameCategory(product, alt)) {
-          console.log(
-            `❌ Rejected (wrong category): ${alt.product_name || alt.product_name_en}`,
-          );
-          return false;
-        }
-
-        // Must be healthier
-        const altScore = calculateHealthScore(alt);
-        return altScore > originalScore + 20;
-      })
-      .map((alt) => ({
-        product: alt,
-        score: calculateHealthScore(alt),
-      }))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 3);
-
-    const alternatives: AlternativeProduct[] = scoredAlternatives.map(
-      ({ product: alt }) => ({
-        barcode: alt.code || "",
-        name: alt.product_name || alt.product_name_en || "Unknown Product",
-        brand: alt.brands || "",
-        image_url: alt.image_url || alt.image_front_url || "",
-        nutri_score: alt.nutriscore_grade?.toUpperCase() || "unknown",
-        nova_group: alt.nova_group || 0,
-        reason: getImprovementReason(product, alt),
-      }),
+    console.log(
+      `🔍 Finding alternatives for: "${product.name}" (${nutriScore}, NOVA ${product.nova_group})`,
     );
 
-    console.log(`✅ Returning ${alternatives.length} alternatives`);
-    alternatives.forEach((alt, i) => {
-      console.log(`  ${i + 1}. ${alt.name} (${alt.brand}) - ${alt.reason}`);
+    const suggestions = await getAISuggestedAlternatives(product);
+    if (suggestions.length === 0) {
+      console.warn("⚠️ AI returned no valid suggestions");
+      return [];
+    }
+
+    // Verify all in parallel
+    const verified = await Promise.all(
+      suggestions.slice(0, 4).map((s) => verifyWithOFF(s)),
+    );
+
+    // Filter by score rules:
+    // - C original → only A or B alternatives
+    // - D or E original → A, B, or C alternatives
+    // - NOVA 4 triggered (any score) → A, B, or C
+    // - Never show D or E as alternatives
+    const results = verified.filter((alt) => {
+      const altNutri = alt.nutri_score;
+
+      // Hard rule: never suggest D or E
+      if (altNutri === "D" || altNutri === "E") return false;
+
+      // unknown score from AI fallback — let it through since AI validated it
+      if (altNutri === "unknown") return true;
+
+      const altRank = SCORE_RANK[altNutri] ?? 0;
+
+      if (nutriScore === "C") {
+        // Must be strictly better than C (i.e. A or B)
+        return altRank > SCORE_RANK["C"];
+      }
+
+      // D, E, or NOVA-4-triggered: accept A, B, or C
+      return altRank >= SCORE_RANK["C"];
     });
 
-    return alternatives;
+    // Sort best score first
+    results.sort(
+      (a, b) =>
+        (SCORE_RANK[b.nutri_score] ?? 0) - (SCORE_RANK[a.nutri_score] ?? 0),
+    );
+
+    console.log(
+      `✅ Final alternatives: ${results.length} for "${product.name}"`,
+    );
+    return results;
   } catch (err) {
     console.error("❌ searchHealthierAlternatives failed:", err);
     return [];

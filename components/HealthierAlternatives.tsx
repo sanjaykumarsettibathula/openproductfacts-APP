@@ -15,6 +15,8 @@ import {
   searchHealthierAlternatives,
   AlternativeProduct,
 } from "@/lib/alternatives";
+import { searchProducts } from "@/lib/api";
+import { useData } from "@/lib/DataContext";
 
 interface HealthierAlternativesProps {
   product: ScannedProduct;
@@ -26,8 +28,11 @@ export default function HealthierAlternatives({
   showAlternatives,
 }: HealthierAlternativesProps) {
   const router = useRouter();
+  const { addScan } = useData();
   const [alternatives, setAlternatives] = useState<AlternativeProduct[]>([]);
   const [loading, setLoading] = useState(false);
+  // Track which card is currently being navigated to (shows per-card spinner)
+  const [navigatingIndex, setNavigatingIndex] = useState<number | null>(null);
 
   useEffect(() => {
     if (showAlternatives) {
@@ -47,10 +52,97 @@ export default function HealthierAlternatives({
     }
   };
 
+  // ------------------------------------------------------------------
+  // HANDLE TAP ON ALTERNATIVE CARD
+  // Flow:
+  //   1. Has real barcode → navigate directly (product detail fetches data)
+  //   2. No barcode (AI-only result) → search by name → navigate
+  // ------------------------------------------------------------------
+  const handleAlternativeTap = async (
+    alt: AlternativeProduct,
+    index: number,
+  ) => {
+    if (navigatingIndex !== null) return; // prevent double-tap
+    setNavigatingIndex(index);
+
+    try {
+      // Case 1: We have a real OFF barcode — go straight to product detail
+      if (alt.barcode && alt.barcode.trim().length > 0) {
+        router.push({
+          pathname: "/product/[barcode]",
+          params: { barcode: alt.barcode },
+        });
+        return;
+      }
+
+      // Case 2: No barcode (AI suggested, OFF didn't find it)
+      // Search by name to get a real product with barcode
+      console.log(`🔍 No barcode for "${alt.name}" — searching by name...`);
+      const searchResult = await searchProducts(alt.name, 1);
+
+      if (searchResult.products.length > 0) {
+        const found = searchResult.products[0];
+        // Save to history so product detail screen can find it instantly
+        await addScan(found);
+        router.push({
+          pathname: "/product/[barcode]",
+          params: { barcode: found.barcode },
+        });
+      } else {
+        // Last resort: create a stub barcode from name for navigation,
+        // product detail will use AI to fill in the data
+        const stubBarcode = `ALT-${alt.name.replace(/\s+/g, "-").slice(0, 30)}-${Date.now()}`;
+        const stubProduct: ScannedProduct = {
+          id: stubBarcode,
+          barcode: stubBarcode,
+          name: alt.name,
+          brand: alt.brand,
+          image_url: alt.image_url || "",
+          nutri_score: alt.nutri_score,
+          eco_score: "unknown",
+          nova_group: alt.nova_group,
+          categories: "",
+          ingredients_text: "",
+          allergens: [],
+          nutrition: {
+            energy_kcal: 0,
+            energy_kj: 0,
+            fat: 0,
+            saturated_fat: 0,
+            carbohydrates: 0,
+            sugars: 0,
+            fiber: 0,
+            protein: 0,
+            salt: 0,
+            sodium: 0,
+          },
+          serving_size: "",
+          quantity: "",
+          packaging: "",
+          origins: "",
+          labels: [],
+          stores: "",
+          countries: "",
+          scanned_at: new Date().toISOString(),
+        };
+        await addScan(stubProduct as any);
+        router.push({
+          pathname: "/product/[barcode]",
+          params: { barcode: stubBarcode },
+        });
+      }
+    } catch (err) {
+      console.error("❌ Alternative navigation failed:", err);
+    } finally {
+      setNavigatingIndex(null);
+    }
+  };
+
   if (!showAlternatives) return null;
 
   return (
     <View style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
         <View style={styles.iconContainer}>
           <Ionicons name="swap-horizontal" size={24} color={Colors.emerald} />
@@ -58,11 +150,12 @@ export default function HealthierAlternatives({
         <View style={styles.headerText}>
           <Text style={styles.title}>Healthier Alternatives</Text>
           <Text style={styles.subtitle}>
-            Better options with improved nutritional profile
+            Same type, better nutrition profile
           </Text>
         </View>
       </View>
 
+      {/* Content */}
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator color={Colors.emerald} size="small" />
@@ -72,18 +165,16 @@ export default function HealthierAlternatives({
         <View style={styles.alternativesList}>
           {alternatives.map((alt, index) => (
             <Pressable
-              key={index}
+              key={`${alt.name}-${index}`}
               style={({ pressed }) => [
                 styles.alternativeCard,
                 pressed && styles.alternativeCardPressed,
+                navigatingIndex === index && styles.alternativeCardLoading,
               ]}
-              onPress={() => {
-                router.push({
-                  pathname: "/product/[barcode]",
-                  params: { barcode: alt.barcode },
-                });
-              }}
+              onPress={() => handleAlternativeTap(alt, index)}
+              disabled={navigatingIndex !== null}
             >
+              {/* Product image */}
               <View style={styles.imageContainer}>
                 {alt.image_url ? (
                   <Image
@@ -93,28 +184,31 @@ export default function HealthierAlternatives({
                   />
                 ) : (
                   <View style={styles.imagePlaceholder}>
-                    <Ionicons name="leaf" size={32} color={Colors.textMuted} />
+                    <Ionicons name="leaf" size={28} color={Colors.textMuted} />
                   </View>
                 )}
               </View>
 
+              {/* Product info */}
               <View style={styles.infoContainer}>
                 <Text style={styles.alternativeName} numberOfLines={2}>
                   {alt.name}
                 </Text>
-                {alt.brand && (
+                {alt.brand ? (
                   <Text style={styles.alternativeBrand} numberOfLines={1}>
                     {alt.brand}
                   </Text>
-                )}
+                ) : null}
 
                 <View style={styles.benefitBadge}>
                   <Ionicons
                     name="checkmark-circle"
-                    size={14}
+                    size={13}
                     color={Colors.emerald}
                   />
-                  <Text style={styles.benefitText}>{alt.reason}</Text>
+                  <Text style={styles.benefitText} numberOfLines={2}>
+                    {alt.reason}
+                  </Text>
                 </View>
 
                 <View style={styles.scoresRow}>
@@ -135,14 +229,28 @@ export default function HealthierAlternatives({
                       <Text style={styles.miniScoreText}>{alt.nova_group}</Text>
                     </View>
                   )}
+                  {!alt.barcode && (
+                    <View style={styles.aiChip}>
+                      <Text style={styles.aiChipText}>AI</Text>
+                    </View>
+                  )}
                 </View>
               </View>
 
-              <Ionicons
-                name="chevron-forward"
-                size={20}
-                color={Colors.textMuted}
-              />
+              {/* Right: chevron or spinner */}
+              {navigatingIndex === index ? (
+                <ActivityIndicator
+                  size="small"
+                  color={Colors.emerald}
+                  style={{ marginLeft: 4 }}
+                />
+              ) : (
+                <Ionicons
+                  name="chevron-forward"
+                  size={20}
+                  color={Colors.textMuted}
+                />
+              )}
             </Pressable>
           ))}
         </View>
@@ -154,14 +262,13 @@ export default function HealthierAlternatives({
             color={Colors.textMuted}
           />
           <Text style={styles.emptyText}>
-            No healthier alternatives found in the database for this product
-            category.
+            No healthier alternatives found for this product type.
           </Text>
         </View>
       )}
 
       <View style={styles.infoFooter}>
-        <Ionicons name="bulb-outline" size={14} color={Colors.textMuted} />
+        <Ionicons name="bulb-outline" size={13} color={Colors.textMuted} />
         <Text style={styles.infoFooterText}>
           Tap any product to view full nutritional details
         </Text>
@@ -171,8 +278,7 @@ export default function HealthierAlternatives({
 }
 
 function getScoreColor(score: string): string {
-  const upper = score.toUpperCase();
-  switch (upper) {
+  switch (score.toUpperCase()) {
     case "A":
       return Colors.nutriA;
     case "B":
@@ -207,9 +313,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  headerText: {
-    flex: 1,
-  },
+  headerText: { flex: 1 },
   title: {
     color: Colors.textPrimary,
     fontSize: 18,
@@ -228,13 +332,8 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingVertical: 32,
   },
-  loadingText: {
-    color: Colors.textSecondary,
-    fontSize: 14,
-  },
-  alternativesList: {
-    gap: 12,
-  },
+  loadingText: { color: Colors.textSecondary, fontSize: 14 },
+  alternativesList: { gap: 12 },
   alternativeCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -249,78 +348,85 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.bgElevated,
     transform: [{ scale: 0.98 }],
   },
+  alternativeCardLoading: {
+    opacity: 0.7,
+  },
   imageContainer: {
-    width: 70,
-    height: 70,
+    width: 68,
+    height: 68,
     borderRadius: 12,
     backgroundColor: Colors.bgElevated,
     overflow: "hidden",
+    flexShrink: 0,
   },
-  image: {
-    width: "100%",
-    height: "100%",
-  },
+  image: { width: "100%", height: "100%" },
   imagePlaceholder: {
     width: "100%",
     height: "100%",
     alignItems: "center",
     justifyContent: "center",
   },
-  infoContainer: {
-    flex: 1,
-    gap: 4,
-  },
+  infoContainer: { flex: 1, gap: 3 },
   alternativeName: {
     color: Colors.textPrimary,
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "600" as const,
-    lineHeight: 20,
+    lineHeight: 19,
   },
   alternativeBrand: {
     color: Colors.textSecondary,
-    fontSize: 13,
+    fontSize: 12,
   },
   benefitBadge: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     gap: 4,
     alignSelf: "flex-start",
     backgroundColor: "rgba(16,185,129,0.1)",
-    paddingHorizontal: 8,
+    paddingHorizontal: 7,
     paddingVertical: 4,
     borderRadius: 6,
-    marginTop: 2,
+    marginTop: 3,
   },
   benefitText: {
     color: Colors.emerald,
     fontSize: 11,
-    fontWeight: "600" as const,
+    fontWeight: "500" as const,
+    flexShrink: 1,
+    lineHeight: 15,
   },
   scoresRow: {
     flexDirection: "row",
-    gap: 6,
-    marginTop: 4,
+    gap: 5,
+    marginTop: 5,
+    alignItems: "center",
+    flexWrap: "wrap",
   },
   miniScore: {
-    width: 24,
-    height: 24,
-    borderRadius: 6,
+    width: 22,
+    height: 22,
+    borderRadius: 5,
     alignItems: "center",
     justifyContent: "center",
   },
-  novaScore: {
-    backgroundColor: Colors.blue,
+  novaScore: { backgroundColor: Colors.blue },
+  miniScoreText: { color: "#fff", fontSize: 11, fontWeight: "700" as const },
+  aiChip: {
+    backgroundColor: "rgba(99,102,241,0.15)",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
   },
-  miniScoreText: {
-    color: "#fff",
-    fontSize: 12,
+  aiChipText: {
+    color: Colors.blue,
+    fontSize: 10,
     fontWeight: "700" as const,
   },
   emptyContainer: {
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 32,
-    gap: 12,
+    gap: 10,
   },
   emptyText: {
     color: Colors.textSecondary,
