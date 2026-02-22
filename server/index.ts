@@ -5,13 +5,13 @@ import * as path from "path";
 dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
 // Now import everything else
-import express from "express";
+import * as express from "express";
 import type { Request, Response, NextFunction } from "express";
 import * as fs from "fs";
 import { connectDB } from "./storage";
 import apiRouter from "./routes";
 
-const app = express();
+const app = (express as any)();
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
 
@@ -73,7 +73,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 
 // ─── HEALTH CHECK ─────────────────────────────────────────────────────────────
 
-app.get("/api/health", (_req, res) => {
+app.get("/api/health", (_req: Request, res: Response) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 

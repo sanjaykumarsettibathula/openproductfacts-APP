@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
-import jwt from "jsonwebtoken";
-import bcrypt from "bcryptjs";
+import * as jwt from "jsonwebtoken";
+import * as bcrypt from "bcryptjs";
 import {
   JWT_SECRET,
   JWT_EXPIRES_IN,
@@ -25,6 +25,33 @@ import {
 } from "./storage";
 
 const router = Router();
+
+// Standard error response format
+const createErrorResponse = (
+  status: number,
+  message: string,
+  details?: any,
+) => ({
+  error: message,
+  status,
+  timestamp: new Date().toISOString(),
+  ...(details && { details }),
+});
+
+// Request logging middleware for debugging
+router.use((req, res, next) => {
+  const timestamp = new Date().toISOString();
+  console.log(`[${timestamp}] ${req.method} ${req.path}`);
+  next();
+});
+
+// Security: Limit response size
+router.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("X-XSS-Protection", "1; mode=block");
+  next();
+});
 
 // ─── AUTH ─────────────────────────────────────────────────────────────────────
 
@@ -52,6 +79,11 @@ router.post("/auth/login", async (req: Request, res: Response) => {
       return res
         .status(400)
         .json({ error: "password must be at least 8 characters" });
+    }
+    // Email format validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ error: "invalid email format" });
     }
 
     const normalizedEmail = email.toLowerCase().trim();
@@ -211,14 +243,40 @@ router.delete(
     const { userId } = req as AuthRequest;
     const productId = req.params.id;
     try {
-      if (!productId) {
-        return res.status(400).json({ error: "product id param is required" });
+      if (!productId || typeof productId !== "string") {
+        return res
+          .status(400)
+          .json(
+            createErrorResponse(
+              400,
+              "product id param is required and must be a string",
+            ),
+          );
       }
-      await deleteScanHistoryItems(userId, [productId]);
+      // Sanitize productId
+      const sanitizedProductId = productId.trim();
+      if (!sanitizedProductId) {
+        return res
+          .status(400)
+          .json(createErrorResponse(400, "product id cannot be empty"));
+      }
+      // Ensure productId is a string and wrap in array
+      const productIdArray = Array.isArray(sanitizedProductId)
+        ? sanitizedProductId
+        : [sanitizedProductId];
+      await deleteScanHistoryItems(userId, productIdArray);
       return res.status(200).json({ success: true });
     } catch (err) {
       console.error(`Delete scan-history error for ${userId}:`, err);
-      return res.status(500).json({ error: "Failed to delete scan" });
+      return res
+        .status(500)
+        .json(
+          createErrorResponse(
+            500,
+            "Failed to delete scan",
+            (err as any)?.message,
+          ),
+        );
     }
   },
 );
@@ -298,14 +356,40 @@ router.delete(
     const { userId } = req as AuthRequest;
     const { barcode } = req.params;
     try {
-      if (!barcode) {
-        return res.status(400).json({ error: "barcode param is required" });
+      if (!barcode || typeof barcode !== "string") {
+        return res
+          .status(400)
+          .json(
+            createErrorResponse(
+              400,
+              "barcode param is required and must be a string",
+            ),
+          );
       }
-      await removeFavorite(userId, barcode);
+      // Sanitize barcode
+      const sanitizedBarcode = barcode.trim();
+      if (!sanitizedBarcode) {
+        return res
+          .status(400)
+          .json(createErrorResponse(400, "barcode cannot be empty"));
+      }
+      // Ensure barcode is a string
+      const barcodeString = Array.isArray(sanitizedBarcode)
+        ? sanitizedBarcode[0]
+        : sanitizedBarcode;
+      await removeFavorite(userId, barcodeString);
       return res.status(200).json({ success: true });
     } catch (err) {
       console.error(`Remove favorite error for ${userId}:`, err);
-      return res.status(500).json({ error: "Failed to remove favorite" });
+      return res
+        .status(500)
+        .json(
+          createErrorResponse(
+            500,
+            "Failed to remove favorite",
+            (err as any)?.message,
+          ),
+        );
     }
   },
 );

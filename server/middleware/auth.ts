@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from "express";
-import jwt from "jsonwebtoken";
+import * as jwt from "jsonwebtoken";
 import type { JwtPayload } from "../Types";
 
 // JWT_SECRET is imported here — NOT hardcoded

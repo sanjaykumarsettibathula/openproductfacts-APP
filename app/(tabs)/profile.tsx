@@ -65,6 +65,14 @@ export default function ProfileScreen() {
     "allergies" | "conditions" | "dietary_restrictions"
   >("allergies");
 
+  // Dialog states
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [showLogoutDialog, setShowLogoutDialog] = useState(false);
+  const [showUploadDialog, setShowUploadDialog] = useState(false);
+  const [uploadDialogType, setUploadDialogType] = useState<"success" | "error">(
+    "success",
+  );
+
   const webTopInset = Platform.OS === "web" ? 67 : 0;
 
   useEffect(() => {
@@ -92,21 +100,11 @@ export default function ProfileScreen() {
   const handleSave = () => {
     updateProfile(form);
     setDirty(false);
-    Alert.alert("Saved", "Your profile has been updated.");
+    setShowSaveDialog(true);
   };
 
   const handleLogout = () => {
-    Alert.alert("Logout", "Are you sure you want to logout?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Logout",
-        style: "destructive",
-        onPress: async () => {
-          await logoutUser();
-          router.replace("/login-new");
-        },
-      },
-    ]);
+    setShowLogoutDialog(true);
   };
 
   const pickHealthReport = async () => {
@@ -119,10 +117,12 @@ export default function ProfileScreen() {
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
         setHealthReport(asset.name);
-        Alert.alert("Success", "Health report uploaded successfully!");
+        setUploadDialogType("success");
+        setShowUploadDialog(true);
       }
     } catch (error) {
-      Alert.alert("Error", "Failed to upload health report");
+      setUploadDialogType("error");
+      setShowUploadDialog(true);
     }
   };
 
@@ -543,6 +543,88 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* Save Success Dialog */}
+      <Modal visible={showSaveDialog} transparent animationType="fade">
+        <View style={styles.dialogOverlay}>
+          <View style={styles.dialogContainer}>
+            <View style={styles.dialogHeader}>
+              <Text style={styles.dialogTitle}>Saved</Text>
+            </View>
+            <View style={styles.dialogMessage}>
+              <Text style={styles.dialogMessageText}>
+                Your profile has been updated.
+              </Text>
+            </View>
+            <Pressable
+              style={styles.dialogButton}
+              onPress={() => setShowSaveDialog(false)}
+            >
+              <Text style={styles.dialogButtonText}>OK</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Logout Confirmation Dialog */}
+      <Modal visible={showLogoutDialog} transparent animationType="fade">
+        <View style={styles.dialogOverlay}>
+          <View style={styles.dialogContainer}>
+            <View style={styles.dialogHeader}>
+              <Text style={styles.dialogTitle}>Logout</Text>
+            </View>
+            <View style={styles.dialogMessage}>
+              <Text style={styles.dialogMessageText}>
+                Are you sure you want to logout?
+              </Text>
+            </View>
+            <View style={styles.dialogButtonRow}>
+              <Pressable
+                style={[styles.dialogButton, styles.dialogCancelButton]}
+                onPress={() => setShowLogoutDialog(false)}
+              >
+                <Text style={styles.dialogCancelButtonText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.dialogButton, styles.dialogDestructiveButton]}
+                onPress={async () => {
+                  await logoutUser();
+                  setShowLogoutDialog(false);
+                  router.replace("/login-new");
+                }}
+              >
+                <Text style={styles.dialogDestructiveButtonText}>Logout</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Upload Status Dialog */}
+      <Modal visible={showUploadDialog} transparent animationType="fade">
+        <View style={styles.dialogOverlay}>
+          <View style={styles.dialogContainer}>
+            <View style={styles.dialogHeader}>
+              <Text style={styles.dialogTitle}>
+                {uploadDialogType === "success" ? "Success" : "Error"}
+              </Text>
+            </View>
+            <View style={styles.dialogMessage}>
+              <Text style={styles.dialogMessageText}>
+                {uploadDialogType === "success"
+                  ? "Health report uploaded successfully!"
+                  : "Failed to upload health report"}
+              </Text>
+            </View>
+            <Pressable
+              style={styles.dialogButton}
+              onPress={() => setShowUploadDialog(false)}
+            >
+              <Text style={styles.dialogButtonText}>OK</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -851,5 +933,87 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 16,
     fontWeight: "600",
+  },
+  // Dialog styles
+  dialogOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 20,
+  },
+  dialogContainer: {
+    backgroundColor: Colors.bgCard,
+    borderRadius: 16,
+    width: "90%",
+    maxWidth: 320,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  dialogHeader: {
+    padding: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  dialogTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: Colors.textPrimary,
+    textAlign: "center",
+  },
+  dialogMessage: {
+    padding: 20,
+    paddingTop: 16,
+  },
+  dialogMessageText: {
+    fontSize: 16,
+    color: Colors.textSecondary,
+    lineHeight: 22,
+    textAlign: "center",
+  },
+  dialogButton: {
+    backgroundColor: Colors.emerald,
+    padding: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    marginHorizontal: 20,
+    marginBottom: 20,
+  },
+  dialogButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: Colors.white,
+  },
+  dialogButtonRow: {
+    flexDirection: "row",
+    gap: 12,
+    paddingHorizontal: 20,
+    marginBottom: 20,
+  },
+  dialogCancelButton: {
+    backgroundColor: Colors.bgInput,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    flex: 1,
+  },
+  dialogDestructiveButton: {
+    backgroundColor: Colors.red,
+    flex: 1,
+  },
+  dialogCancelButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: Colors.textSecondary,
+  },
+  dialogDestructiveButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: Colors.white,
   },
 });
