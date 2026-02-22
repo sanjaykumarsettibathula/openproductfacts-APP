@@ -386,7 +386,7 @@ async function resolveFirstValidImage(candidates: string[]): Promise<string> {
 // AI DATA EXTRACTION — TEXT
 // Used by: name search (Way 4), partial OFF supplement, barcode miss with name
 // --------------------------------------------------------------------------
-async function extractProductDataWithAI(
+export async function extractProductDataWithAI(
   query: string,
   barcode?: string,
   overrideImageUrl?: string,
@@ -404,6 +404,8 @@ async function extractProductDataWithAI(
 
 Task: Return accurate product information for: "${query}"${barcode ? ` (barcode: ${barcode})` : ""}
 
+${barcode ? `CRITICAL: Barcode ${barcode} is provided. This barcode MUST match the exact product. Do NOT guess similar products - find the exact product with this barcode. If you cannot find this specific barcode, return confidence < 0.4 and indicate unknown product.` : ""}
+
 IMPORTANT — spelling variants: treat "Maggie"="Maggi", "Kitkat"="KitKat", "Lays"="Lay's", "Oreos"="Oreo", "Nutela"="Nutella" etc.
 
 CONFIDENCE SCORING:
@@ -412,6 +414,7 @@ CONFIDENCE SCORING:
 - 0.60 = recognise category, estimating nutrition
 - 0.40 = mostly guessing
 Set confidence < 0.4 only for truly unknown/obscure products.
+${barcode ? `For barcode lookups: Only set confidence >= 0.8 if you are CERTAIN this barcode matches the product. Otherwise set confidence 0.3-0.4.` : ""}
 
 REFERENCE VALUES per 100g:
 KitKat 2-finger: 518kcal 27g fat 11g sat 60g carb 48g sugar 5g pro nutri:D nova:4

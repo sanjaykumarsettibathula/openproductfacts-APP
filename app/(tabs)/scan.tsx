@@ -397,6 +397,11 @@ export default function ScanScreen() {
   }
 
   function showFound(product: ProductWithMeta, onTryAgain?: () => void) {
+    // Save to database immediately when product is found
+    addScan(product).catch((err) => {
+      console.error("❌ Failed to save scan:", err);
+    });
+
     setModal({
       visible: true,
       type: "found",
@@ -473,10 +478,24 @@ export default function ScanScreen() {
         return;
       }
 
-      // Step 3: Not in OFF and can't use LLM with just a barcode.
-      // Guide the user to search by name instead — that's the honest UX.
+      // Step 3: Not in OFF - Try to get product info using AI with barcode
+      setLoadingMsg("Getting product info with AI...");
+      try {
+        // Import AI function here to avoid circular imports
+        const { extractProductDataWithAI } = await import("@/lib/api");
+        const aiProduct = await extractProductDataWithAI("", barcode);
+
+        if (aiProduct) {
+          showFound(aiProduct, resetScanner);
+          return;
+        }
+      } catch (llmError) {
+        console.error("❌ AI lookup failed:", llmError);
+      }
+
+      // Step 4: AI also failed - guide user to search by name
       showNotFound(
-        `Barcode ${barcode} wasn't found in the product database.\n\nDo you know the product name? Search by name to get AI-powered results.`,
+        `Barcode ${barcode} wasn't found in product database and AI lookup failed.\n\nDo you know the product name? Search by name to get AI-powered results.`,
         resetScanner,
         () => {
           setModal((m) => ({ ...m, visible: false }));

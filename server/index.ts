@@ -1,250 +1,205 @@
+// ── Load .env FIRST before any other imports ─────────────────────────────────
+// This must be at the very top — before importing storage.ts which reads process.env
+import * as dotenv from "dotenv";
+import * as path from "path";
+dotenv.config({ path: path.resolve(process.cwd(), ".env") });
+
+// Now import everything else
 import express from "express";
 import type { Request, Response, NextFunction } from "express";
-import { registerRoutes } from "./routes";
 import * as fs from "fs";
-import * as path from "path";
+import { connectDB } from "./storage";
+import apiRouter from "./routes";
 
 const app = express();
-const log = console.log;
 
-declare module "http" {
-  interface IncomingMessage {
-    rawBody: unknown;
+// ─── CORS ─────────────────────────────────────────────────────────────────────
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const allowedOrigins = new Set<string>();
+
+  if (process.env.REPLIT_DEV_DOMAIN)
+    allowedOrigins.add(`https://${process.env.REPLIT_DEV_DOMAIN}`);
+  if (process.env.REPLIT_DOMAINS)
+    process.env.REPLIT_DOMAINS.split(",").forEach((d) =>
+      allowedOrigins.add(`https://${d.trim()}`),
+    );
+
+  const origin = req.headers["origin"] ?? "";
+  const isLocalNetwork =
+    /^http:\/\/localhost:\d+$/.test(origin) ||
+    /^http:\/\/127\.0\.0\.1:\d+$/.test(origin) ||
+    /^http:\/\/10\.\d+\.\d+\.\d+:\d+$/.test(origin) ||
+    /^http:\/\/172\.(1[6-9]|2\d|3[01])\.\d+\.\d+:\d+$/.test(origin) ||
+    /^http:\/\/192\.168\.\d+\.\d+:\d+$/.test(origin);
+
+  if (origin && (allowedOrigins.has(origin) || isLocalNetwork)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader(
+      "Access-Control-Allow-Methods",
+      "GET,POST,PUT,DELETE,OPTIONS",
+    );
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization");
+    res.setHeader("Access-Control-Allow-Credentials", "true");
   }
-}
 
-function setupCors(app: express.Application) {
-  app.use((req, res, next) => {
-    const origins = new Set<string>();
+  if (req.method === "OPTIONS") {
+    res.sendStatus(200);
+    return;
+  }
+  next();
+});
 
-    if (process.env.REPLIT_DEV_DOMAIN) {
-      origins.add(`https://${process.env.REPLIT_DEV_DOMAIN}`);
-    }
+// ─── BODY PARSING ─────────────────────────────────────────────────────────────
 
-    if (process.env.REPLIT_DOMAINS) {
-      process.env.REPLIT_DOMAINS.split(",").forEach((d) => {
-        origins.add(`https://${d.trim()}`);
-      });
-    }
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: false }));
 
-    const origin = req.header("origin");
+// ─── REQUEST LOGGING ──────────────────────────────────────────────────────────
 
-    // Allow localhost origins for Expo web development (any port)
-    const isLocalhost =
-      origin?.startsWith("http://localhost:") ||
-      origin?.startsWith("http://127.0.0.1:");
-
-    if (origin && (origins.has(origin) || isLocalhost)) {
-      res.header("Access-Control-Allow-Origin", origin);
-      res.header(
-        "Access-Control-Allow-Methods",
-        "GET, POST, PUT, DELETE, OPTIONS",
-      );
-      res.header("Access-Control-Allow-Headers", "Content-Type");
-      res.header("Access-Control-Allow-Credentials", "true");
-    }
-
-    if (req.method === "OPTIONS") {
-      return res.sendStatus(200);
-    }
-
-    next();
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (!req.path.startsWith("/api")) return next();
+  const start = Date.now();
+  res.on("finish", () => {
+    const ms = Date.now() - start;
+    const icon =
+      res.statusCode >= 500 ? "❌" : res.statusCode >= 400 ? "⚠️ " : "✅";
+    console.log(
+      `${icon} ${req.method} ${req.path} ${res.statusCode} — ${ms}ms`,
+    );
   });
-}
+  next();
+});
 
-function setupBodyParsing(app: express.Application) {
-  app.use(
-    express.json({
-      verify: (req, _res, buf) => {
-        req.rawBody = buf;
-      },
-    }),
-  );
+// ─── HEALTH CHECK ─────────────────────────────────────────────────────────────
 
-  app.use(express.urlencoded({ extended: false }));
-}
+app.get("/api/health", (_req, res) => {
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
 
-function setupRequestLogging(app: express.Application) {
-  app.use((req, res, next) => {
-    const start = Date.now();
-    const path = req.path;
-    let capturedJsonResponse: Record<string, unknown> | undefined = undefined;
+// ─── API ROUTES ───────────────────────────────────────────────────────────────
 
-    const originalResJson = res.json;
-    res.json = function (bodyJson, ...args) {
-      capturedJsonResponse = bodyJson;
-      return originalResJson.apply(res, [bodyJson, ...args]);
-    };
+app.use("/api", apiRouter);
 
-    res.on("finish", () => {
-      if (!path.startsWith("/api")) return;
+// ─── STATIC / EXPO ────────────────────────────────────────────────────────────
 
-      const duration = Date.now() - start;
-
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
-
-      if (logLine.length > 80) {
-        logLine = logLine.slice(0, 79) + "…";
-      }
-
-      log(logLine);
-    });
-
-    next();
-  });
-}
-
-function getAppName(): string {
-  try {
-    const appJsonPath = path.resolve(process.cwd(), "app.json");
-    const appJsonContent = fs.readFileSync(appJsonPath, "utf-8");
-    const appJson = JSON.parse(appJsonContent);
-    return appJson.expo?.name || "App Landing Page";
-  } catch {
-    return "App Landing Page";
-  }
-}
-
-function serveExpoManifest(platform: string, res: Response) {
-  const manifestPath = path.resolve(
-    process.cwd(),
-    "static-build",
-    platform,
-    "manifest.json",
-  );
-
-  if (!fs.existsSync(manifestPath)) {
-    return res
-      .status(404)
-      .json({ error: `Manifest not found for platform: ${platform}` });
-  }
-
-  res.setHeader("expo-protocol-version", "1");
-  res.setHeader("expo-sfv-version", "0");
-  res.setHeader("content-type", "application/json");
-
-  const manifest = fs.readFileSync(manifestPath, "utf-8");
-  res.send(manifest);
-}
-
-function serveLandingPage({
-  req,
-  res,
-  landingPageTemplate,
-  appName,
-}: {
-  req: Request;
-  res: Response;
-  landingPageTemplate: string;
-  appName: string;
-}) {
-  const forwardedProto = req.header("x-forwarded-proto");
-  const protocol = forwardedProto || req.protocol || "https";
-  const forwardedHost = req.header("x-forwarded-host");
-  const host = forwardedHost || req.get("host");
-  const baseUrl = `${protocol}://${host}`;
-  const expsUrl = `${host}`;
-
-  log(`baseUrl`, baseUrl);
-  log(`expsUrl`, expsUrl);
-
-  const html = landingPageTemplate
-    .replace(/BASE_URL_PLACEHOLDER/g, baseUrl)
-    .replace(/EXPS_URL_PLACEHOLDER/g, expsUrl)
-    .replace(/APP_NAME_PLACEHOLDER/g, appName);
-
-  res.setHeader("Content-Type", "text/html; charset=utf-8");
-  res.status(200).send(html);
-}
-
-function configureExpoAndLanding(app: express.Application) {
+function configureStaticAndExpo() {
   const templatePath = path.resolve(
     process.cwd(),
     "server",
     "templates",
     "landing-page.html",
   );
-  const landingPageTemplate = fs.readFileSync(templatePath, "utf-8");
-  const appName = getAppName();
+  let template = "<html><body><h1>FoodScan API is running</h1></body></html>";
+  try {
+    template = fs.readFileSync(templatePath, "utf-8");
+  } catch {}
 
-  log("Serving static Expo files with dynamic manifest routing");
+  let appName = "FoodScan";
+  try {
+    const appJson = JSON.parse(
+      fs.readFileSync(path.resolve(process.cwd(), "app.json"), "utf-8"),
+    );
+    appName = appJson.expo?.name || "FoodScan";
+  } catch {}
 
   app.use((req: Request, res: Response, next: NextFunction) => {
-    if (req.path.startsWith("/api")) {
-      return next();
-    }
+    if (req.path.startsWith("/api")) return next();
+    if (req.path !== "/" && req.path !== "/manifest") return next();
 
-    if (req.path !== "/" && req.path !== "/manifest") {
-      return next();
-    }
-
-    const platform = req.header("expo-platform");
-    if (platform && (platform === "ios" || platform === "android")) {
-      return serveExpoManifest(platform, res);
+    const platform = req.headers["expo-platform"];
+    if (platform === "ios" || platform === "android") {
+      const manifestPath = path.resolve(
+        process.cwd(),
+        "static-build",
+        platform as string,
+        "manifest.json",
+      );
+      if (!fs.existsSync(manifestPath))
+        return res.status(404).json({ error: `Manifest not found` });
+      res.setHeader("expo-protocol-version", "1");
+      res.setHeader("expo-sfv-version", "0");
+      res.setHeader("content-type", "application/json");
+      return res.send(fs.readFileSync(manifestPath, "utf-8"));
     }
 
     if (req.path === "/") {
-      return serveLandingPage({
-        req,
-        res,
-        landingPageTemplate,
-        appName,
-      });
+      const proto = req.headers["x-forwarded-proto"] || req.protocol || "https";
+      const host =
+        req.headers["x-forwarded-host"] ||
+        req.headers["host"] ||
+        `localhost:${process.env.PORT || 3001}`;
+      const html = template
+        .replace(/BASE_URL_PLACEHOLDER/g, `${proto}://${host}`)
+        .replace(/EXPS_URL_PLACEHOLDER/g, host as string)
+        .replace(/APP_NAME_PLACEHOLDER/g, appName);
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      return res.status(200).send(html);
     }
-
     next();
   });
 
   app.use("/assets", express.static(path.resolve(process.cwd(), "assets")));
   app.use(express.static(path.resolve(process.cwd(), "static-build")));
-
-  log("Expo routing: Checking expo-platform header on / and /manifest");
 }
 
-function setupErrorHandler(app: express.Application) {
-  app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
-    const error = err as {
-      status?: number;
-      statusCode?: number;
-      message?: string;
-    };
+configureStaticAndExpo();
 
-    const status = error.status || error.statusCode || 500;
-    const message = error.message || "Internal Server Error";
+// ─── ERROR HANDLER ────────────────────────────────────────────────────────────
 
-    console.error("Internal Server Error:", err);
+app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
+  if (res.headersSent) return next(err);
+  console.error("Unhandled error:", err);
+  res
+    .status(err.status || 500)
+    .json({ message: err.message || "Internal Server Error" });
+});
 
-    if (res.headersSent) {
-      return next(err);
-    }
+// ─── STARTUP ──────────────────────────────────────────────────────────────────
 
-    return res.status(status).json({ message });
-  });
-}
+const PORT = parseInt(process.env.PORT || "3001", 10);
 
 (async () => {
-  setupCors(app);
-  setupBodyParsing(app);
-  setupRequestLogging(app);
-
-  configureExpoAndLanding(app);
-
-  const server = await registerRoutes(app);
-
-  setupErrorHandler(app);
-
-  const port = parseInt(process.env.PORT || "5000", 10);
-  server.listen(
-    {
-      port,
-      host: "0.0.0.0",
-      reusePort: true,
-    },
-    () => {
-      log(`express server serving on port ${port}`);
-    },
+  console.log("\n🚀 Starting FoodScan server...");
+  console.log("   NODE_ENV:", process.env.NODE_ENV || "development");
+  console.log("   PORT:", PORT);
+  console.log(
+    "   MONGODB_URI:",
+    process.env.MONGODB_URI ? "✅ set" : "❌ NOT SET",
   );
+  console.log(
+    "   JWT_SECRET:",
+    process.env.JWT_SECRET ? "✅ set" : "⚠️  not set (using fallback)",
+  );
+  console.log("   DB_NAME:", process.env.MONGODB_DB_NAME || "foodscan");
+
+  if (!process.env.MONGODB_URI) {
+    console.error("\n❌ FATAL: MONGODB_URI is not set.");
+    console.error("   Create a .env file in your project root with:");
+    console.error(
+      "   MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/?retryWrites=true&w=majority",
+    );
+    process.exit(1);
+  }
+
+  try {
+    console.log("\n⏳ Connecting to MongoDB...");
+    await connectDB();
+    // connectDB() already logs ✅ MongoDB connected
+
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`\n✅ Server ready on port ${PORT}`);
+      console.log(`   Local:  http://localhost:${PORT}/api/health`);
+      console.log(
+        `   For Android device: http://YOUR_LAN_IP:${PORT}/api/health\n`,
+      );
+    });
+  } catch (err: any) {
+    console.error("\n❌ FATAL: Could not connect to MongoDB:", err.message);
+    console.error("\n   Fix checklist:");
+    console.error("   1. Is MONGODB_URI correct in .env?");
+    console.error("   2. Go to MongoDB Atlas → Network Access → Add 0.0.0.0/0");
+    console.error("   3. Check your Atlas username/password");
+    process.exit(1);
+  }
 })();

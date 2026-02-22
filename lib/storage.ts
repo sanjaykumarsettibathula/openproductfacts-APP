@@ -5,6 +5,8 @@ const KEYS = {
   LISTS: "@foodscan_lists",
   PROFILE: "@foodscan_profile",
   FAVORITES: "@foodscan_favorites",
+  AUTH_TOKEN: "@foodscan_auth_token",
+  AUTH_USER: "@foodscan_auth_user",
 };
 
 export interface ScannedProduct {
@@ -62,6 +64,15 @@ export interface UserProfile {
   notes: string;
 }
 
+// Auth user stored locally after login
+export interface AuthUser {
+  id: string;
+  username: string;
+  email?: string;
+}
+
+// ─── SCAN HISTORY ─────────────────────────────────────────────────────────────
+
 export async function getScanHistory(): Promise<ScannedProduct[]> {
   try {
     const data = await AsyncStorage.getItem(KEYS.SCAN_HISTORY);
@@ -88,6 +99,8 @@ export async function clearScanHistory(): Promise<void> {
   await AsyncStorage.setItem(KEYS.SCAN_HISTORY, JSON.stringify([]));
 }
 
+// ─── PRODUCT LISTS ────────────────────────────────────────────────────────────
+
 export async function getLists(): Promise<ProductList[]> {
   try {
     const data = await AsyncStorage.getItem(KEYS.LISTS);
@@ -100,6 +113,8 @@ export async function getLists(): Promise<ProductList[]> {
 export async function saveLists(lists: ProductList[]): Promise<void> {
   await AsyncStorage.setItem(KEYS.LISTS, JSON.stringify(lists));
 }
+
+// ─── FAVORITES ────────────────────────────────────────────────────────────────
 
 export async function getFavorites(): Promise<string[]> {
   try {
@@ -120,11 +135,13 @@ export async function toggleFavorite(barcode: string): Promise<boolean> {
   return !isFav;
 }
 
+// ─── USER PROFILE ─────────────────────────────────────────────────────────────
+
 export async function getProfile(): Promise<UserProfile> {
   try {
     const data = await AsyncStorage.getItem(KEYS.PROFILE);
     return data ? JSON.parse(data) : getDefaultProfile();
-  } catch (error) {
+  } catch {
     return getDefaultProfile();
   }
 }
@@ -145,4 +162,31 @@ function getDefaultProfile(): UserProfile {
     dietary_restrictions: [],
     notes: "",
   };
+}
+
+// ─── AUTH TOKEN (stored locally, sent with every API request) ─────────────────
+
+export async function getAuthToken(): Promise<string | null> {
+  return AsyncStorage.getItem(KEYS.AUTH_TOKEN);
+}
+
+export async function saveAuthToken(token: string): Promise<void> {
+  await AsyncStorage.setItem(KEYS.AUTH_TOKEN, token);
+}
+
+export async function clearAuthToken(): Promise<void> {
+  await AsyncStorage.multiRemove([KEYS.AUTH_TOKEN, KEYS.AUTH_USER]);
+}
+
+export async function getSavedAuthUser(): Promise<AuthUser | null> {
+  try {
+    const raw = await AsyncStorage.getItem(KEYS.AUTH_USER);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveAuthUser(user: AuthUser): Promise<void> {
+  await AsyncStorage.setItem(KEYS.AUTH_USER, JSON.stringify(user));
 }
