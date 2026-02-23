@@ -5,13 +5,13 @@ import * as path from "path";
 dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
 // Now import everything else
-import * as express from "express";
+import express from "express";
 import type { Request, Response, NextFunction } from "express";
 import * as fs from "fs";
 import { connectDB } from "./storage";
 import apiRouter from "./routes";
 
-const app = (express as any)();
+const app = express();
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
 
