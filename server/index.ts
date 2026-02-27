@@ -18,12 +18,28 @@ const app = express();
 app.use((req: Request, res: Response, next: NextFunction) => {
   const allowedOrigins = new Set<string>();
 
+  // Development origins
+  if (process.env.NODE_ENV !== "production") {
+    allowedOrigins.add("http://localhost:8081");
+    allowedOrigins.add("http://localhost:8082");
+    allowedOrigins.add("exp://192.168.1.7:8082");
+  }
+
+  // Production origins (Render + Expo)
   if (process.env.REPLIT_DEV_DOMAIN)
     allowedOrigins.add(`https://${process.env.REPLIT_DEV_DOMAIN}`);
   if (process.env.REPLIT_DOMAINS)
     process.env.REPLIT_DOMAINS.split(",").forEach((d) =>
       allowedOrigins.add(`https://${d.trim()}`),
     );
+
+  // Add Render URL
+  if (process.env.RENDER_SERVICE_URL) {
+    allowedOrigins.add(process.env.RENDER_SERVICE_URL);
+  }
+
+  // Add your deployed frontend URL
+  allowedOrigins.add("https://your-app-name.onrender.com");
 
   const origin = req.headers["origin"] ?? "";
   const isLocalNetwork =
@@ -33,7 +49,13 @@ app.use((req: Request, res: Response, next: NextFunction) => {
     /^http:\/\/172\.(1[6-9]|2\d|3[01])\.\d+\.\d+:\d+$/.test(origin) ||
     /^http:\/\/192\.168\.\d+\.\d+:\d+$/.test(origin);
 
-  if (origin && (allowedOrigins.has(origin) || isLocalNetwork)) {
+  // In production, be more restrictive
+  const isAllowed =
+    process.env.NODE_ENV === "production"
+      ? allowedOrigins.has(origin) || isLocalNetwork
+      : allowedOrigins.has(origin) || isLocalNetwork;
+
+  if (origin && isAllowed) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader(
       "Access-Control-Allow-Methods",

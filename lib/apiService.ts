@@ -16,7 +16,10 @@ import {
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 
 const API_BASE = (
-  process.env.EXPO_PUBLIC_API_URL || "http://localhost:3001"
+  process.env.EXPO_PUBLIC_API_URL ||
+  (process.env.NODE_ENV === "production"
+    ? "https://your-backend-name.onrender.com"
+    : "http://localhost:3001")
 ).replace(/\/$/, "");
 
 // ─── BASE REQUEST ─────────────────────────────────────────────────────────────

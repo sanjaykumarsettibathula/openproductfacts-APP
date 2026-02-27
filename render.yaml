@@ -1,0 +1,34 @@
+services:
+  # Backend API Service
+  - type: web
+    name: foodscan-api
+    env: node
+    plan: free
+    buildCommand: npm run server:build
+    startCommand: npm run server:prod
+    healthCheckPath: /api/health
+    
+    # Environment variables (set these in Render dashboard)
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000  # Render's default port
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DB_NAME
+        value: foodscan
+      - key: JWT_SECRET
+        sync: false
+      - key: EXPO_PUBLIC_GEMINI_API_KEY
+        sync: false
+
+    # Auto-deploy from main branch
+    autoDeploy: true
+    
+    # Build configuration
+    buildFilter:
+      paths:
+        - server/**
+        - package.json
+        - package-lock.json
