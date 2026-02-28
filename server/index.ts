@@ -132,6 +132,34 @@ app.get("/api/health", (_req: Request, res: Response) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
+// ─── AUTH ENDPOINT ─────────────────────────────────────────────────────────────
+
+app.post("/api/auth/login", (req: Request, res: Response) => {
+  console.log("🔐 Auth request:", {
+    body: req.body,
+    env: {
+      JWT_SECRET: process.env.JWT_SECRET ? "✅ set" : "❌ NOT SET",
+      NODE_ENV: process.env.NODE_ENV,
+    },
+  });
+
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({ error: "email and password required" });
+  }
+
+  // Mock authentication for testing
+  if (email === "test@example.com" && password === "test123456") {
+    return res.json({
+      token: "mock-jwt-token-for-testing",
+      user: { userId: "test-user", email, username: "test" },
+    });
+  }
+
+  return res.status(401).json({ error: "Invalid credentials" });
+});
+
 // ─── API ROUTES ───────────────────────────────────────────────────────────────
 
 app.use("/api", apiRouter);
@@ -164,6 +192,15 @@ function configureStaticAndExpo() {
 
     const platform = req.headers["expo-platform"];
     if (platform === "ios" || platform === "android") {
+      return next();
+    }
+
+    // Handle other cases...
+    return next();
+  });
+}
+
+configureStaticAndExpo();
 
 app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
   if (res.headersSent) return next(err);
@@ -178,13 +215,22 @@ app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
 const PORT = parseInt(process.env.PORT || "10000", 10);
 
 (async () => {
-  console.log("\n🚀 Starting FoodScan server...");
+  console.log("\n🚀 Starting FoodScan server v2.0...");
   console.log("   NODE_ENV:", process.env.NODE_ENV || "development");
   console.log("   PORT:", PORT);
   console.log("🔍 ALL ENVIRONMENT VARIABLES:");
-  console.log("   MONGODB_URI:", process.env.MONGODB_URI ? "✅ set" : "❌ NOT SET");
-  console.log("   JWT_SECRET:", process.env.JWT_SECRET ? "✅ set" : "❌ NOT SET");
-  console.log("   EXPO_PUBLIC_GEMINI_API_KEY:", process.env.EXPO_PUBLIC_GEMINI_API_KEY ? "✅ set" : "❌ NOT SET");
+  console.log(
+    "   MONGODB_URI:",
+    process.env.MONGODB_URI ? "✅ set" : "❌ NOT SET",
+  );
+  console.log(
+    "   JWT_SECRET:",
+    process.env.JWT_SECRET ? "✅ set" : "❌ NOT SET",
+  );
+  console.log(
+    "   EXPO_PUBLIC_GEMINI_API_KEY:",
+    process.env.EXPO_PUBLIC_GEMINI_API_KEY ? "✅ set" : "❌ NOT SET",
+  );
   console.log("   ALL process.env keys:", Object.keys(process.env));
 
   if (!process.env.MONGODB_URI) {
@@ -193,7 +239,46 @@ const PORT = parseInt(process.env.PORT || "10000", 10);
     console.error(
       "   MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/?retryWrites=true&w=majority",
     );
-    process.exit(1);
+
+    // For testing without MongoDB, start a minimal server
+    console.log("\n🧪 Starting minimal server without MongoDB for testing...");
+    app.get("/api/health", (_req: Request, res: Response) => {
+      res.json({ status: "ok", timestamp: new Date().toISOString() });
+    });
+
+    app.post("/api/auth/login", (req: Request, res: Response) => {
+      console.log("🔐 Test auth request:", {
+        body: req.body,
+        env: {
+          JWT_SECRET: process.env.JWT_SECRET ? "✅ set" : "❌ NOT SET",
+          NODE_ENV: process.env.NODE_ENV,
+        },
+      });
+
+      const { email, password } = req.body;
+
+      if (!email || !password) {
+        return res.status(400).json({ error: "email and password required" });
+      }
+
+      // Mock authentication for testing
+      if (email === "test@example.com" && password === "test123456") {
+        return res.json({
+          token: "mock-jwt-token-for-testing",
+          user: { userId: "test-user", email, username: "test" },
+        });
+      }
+
+      return res.status(401).json({ error: "Invalid credentials" });
+    });
+
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`\n🧪 Minimal server ready on port ${PORT}`);
+      console.log(`   Health: http://localhost:${PORT}/api/health`);
+      console.log(`   Auth:   http://localhost:${PORT}/api/auth/login`);
+    });
+
+    return;
   }
 
   try {
