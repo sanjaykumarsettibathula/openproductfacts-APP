@@ -212,7 +212,7 @@ app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
 
 // ─── STARTUP ──────────────────────────────────────────────────────────────────
 
-const PORT = parseInt(process.env.PORT || "3001", 10);
+const PORT = parseInt(process.env.PORT || "10000", 10);
 
 (async () => {
   console.log("\n🚀 Starting FoodScan server...");
