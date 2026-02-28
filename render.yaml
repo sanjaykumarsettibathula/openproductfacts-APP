@@ -4,7 +4,7 @@ services:
     name: foodscan-api
     env: node
     plan: free
-    buildCommand: npm install && npm install -g esbuild && npm run server:build
+    buildCommand: npm install && npm run server:build
     startCommand: npm run server:prod
     healthCheckPath: /api/health
 
