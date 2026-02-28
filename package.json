@@ -80,7 +80,6 @@
     "@types/mongodb": "^4.0.7",
     "@types/node": "^22.10.5",
     "@types/react": "~18.3.12",
-    "@types/react-native": "~0.76.8",
     "concurrently": "^9.1.0",
     "cross-env": "^7.0.3",
     "dotenv": "^16.4.7",
