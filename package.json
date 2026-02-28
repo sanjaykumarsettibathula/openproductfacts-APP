@@ -80,7 +80,7 @@
     "@types/jsonwebtoken": "^9.0.7",
     "@types/mongodb": "^4.0.7",
     "@types/node": "^22.10.5",
-    "@types/react": "~18.3.12",
+    "@types/react": "^19.1.0",
     "concurrently": "^9.1.0",
     "dotenv": "^16.4.7",
     "drizzle-kit": "^0.30.1",
