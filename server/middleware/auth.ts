@@ -6,12 +6,6 @@ import type { JwtPayload } from "../Types";
 // Exported so routes.ts can use the same value for signing
 export const JWT_SECRET = (() => {
   const secret = process.env.JWT_SECRET;
-  console.log("🔑 JWT_SECRET check:", {
-    hasValue: !!secret,
-    length: secret?.length || 0,
-    first5Chars: secret?.substring(0, 5) || "undefined",
-    envName: "JWT_SECRET",
-  });
 
   if (!secret) {
     throw new Error("❌ JWT_SECRET must be set in environment variables");
