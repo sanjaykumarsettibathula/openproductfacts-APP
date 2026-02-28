@@ -48,7 +48,10 @@ export default function HomeScreen() {
         style={styles.scroll}
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingBottom: Platform.OS === "web" ? 34 : insets.bottom + 90 },
+          {
+            paddingBottom:
+              Platform.OS === "web" ? 34 : Math.max(insets.bottom + 20, 80),
+          },
         ]}
         showsVerticalScrollIndicator={false}
       >

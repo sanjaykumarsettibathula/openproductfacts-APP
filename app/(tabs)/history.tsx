@@ -158,7 +158,10 @@ export default function HistoryScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={[
           styles.list,
-          { paddingBottom: Platform.OS === "web" ? 84 : insets.bottom + 90 },
+          {
+            paddingBottom:
+              Platform.OS === "web" ? 84 : Math.max(insets.bottom + 20, 80),
+          },
         ]}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={

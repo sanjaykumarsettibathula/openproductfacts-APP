@@ -7,13 +7,7 @@ import type { JwtPayload } from "../Types";
 export const JWT_SECRET = (() => {
   const secret = process.env.JWT_SECRET;
   if (!secret) {
-    if (process.env.NODE_ENV === "production") {
-      throw new Error("❌ JWT_SECRET must be set in production environment");
-    }
-    console.warn(
-      "⚠️  JWT_SECRET not set — using dev fallback. Set it in .env for production.",
-    );
-    return "dev-only-fallback-secret-change-before-deploying";
+    throw new Error("❌ JWT_SECRET must be set in environment variables");
   }
   return secret;
 })();

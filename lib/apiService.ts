@@ -18,7 +18,7 @@ import {
 const API_BASE = (
   process.env.EXPO_PUBLIC_API_URL ||
   (process.env.NODE_ENV === "production"
-    ? "https://your-backend-name.onrender.com"
+    ? "https://openproductfacts-app-1.onrender.com"
     : "http://localhost:3001")
 ).replace(/\/$/, "");
 
@@ -28,7 +28,9 @@ async function request<T = any>(
   path: string,
   options: RequestInit & { token?: string } = {},
 ): Promise<T> {
-  const { token, ...rest } = options;
+  const { token, method = "GET", ...rest } = options;
+
+  console.log(`🌐 API Request: ${method} ${API_BASE}${path}`);
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -48,11 +50,13 @@ async function request<T = any>(
       headers,
       signal: controller.signal,
     });
+    console.log(`✅ API Response: ${response.status} ${path}`);
   } catch (err: any) {
     clearTimeout(timeout);
     if (err?.name === "AbortError") {
       throw new Error("Request timed out — check your network connection");
     }
+    console.error(`❌ API Error: ${err?.message || "Unknown"}`);
     throw new Error(`Network error: ${err?.message || "Unknown"}`);
   }
   clearTimeout(timeout);

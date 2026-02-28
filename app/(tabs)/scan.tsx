@@ -1036,7 +1036,8 @@ export default function ScanScreen() {
 
       <View
         style={{
-          paddingBottom: Platform.OS === "web" ? 84 : insets.bottom + 90,
+          paddingBottom:
+            Platform.OS === "web" ? 84 : Math.max(insets.bottom + 20, 80),
         }}
       />
 

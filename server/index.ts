@@ -2,7 +2,35 @@
 // This must be at the very top — before importing storage.ts which reads process.env
 import * as dotenv from "dotenv";
 import * as path from "path";
-dotenv.config({ path: path.resolve(process.cwd(), ".env") });
+
+// In production, Render sets environment variables directly
+// Only load .env for local development
+if (process.env.NODE_ENV !== "production") {
+  const envPaths = [
+    path.resolve(process.cwd(), ".env"),
+    path.resolve(process.cwd(), ".env.local"),
+  ];
+
+  let envLoaded = false;
+  for (const envPath of envPaths) {
+    try {
+      const result = dotenv.config({ path: envPath });
+      if (result.parsed) {
+        console.log(`✅ Loaded .env from: ${envPath}`);
+        envLoaded = true;
+        break;
+      }
+    } catch (error) {
+      // Continue to next path
+    }
+  }
+
+  if (!envLoaded) {
+    console.warn("⚠️  No .env file found, using environment variables only");
+  }
+} else {
+  console.log("🏭 Production mode - using Render environment variables");
+}
 
 // Now import everything else
 import express from "express";
@@ -20,6 +48,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 
   // Development origins
   if (process.env.NODE_ENV !== "production") {
+    allowedOrigins.add("https://openproductfacts-app-1.onrender.com");
     allowedOrigins.add("http://localhost:8081");
     allowedOrigins.add("http://localhost:8082");
     allowedOrigins.add("exp://192.168.1.7:8082");
@@ -39,7 +68,11 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   }
 
   // Add your deployed frontend URL
-  allowedOrigins.add("https://your-app-name.onrender.com");
+  allowedOrigins.add("https://openproductfacts-app-1.onrender.com");
+
+  // Add mobile app origins (Expo Go)
+  allowedOrigins.add("exp://*");
+  allowedOrigins.add("exps://*");
 
   const origin = req.headers["origin"] ?? "";
   const isLocalNetwork =
@@ -193,7 +226,10 @@ const PORT = parseInt(process.env.PORT || "3001", 10);
     "   JWT_SECRET:",
     process.env.JWT_SECRET ? "✅ set" : "⚠️  not set (using fallback)",
   );
-  console.log("   DB_NAME:", process.env.MONGODB_DB_NAME || "foodscan");
+  console.log(
+    "   EXPO_PUBLIC_GEMINI_API_KEY:",
+    process.env.EXPO_PUBLIC_GEMINI_API_KEY ? "✅ set" : "❌ NOT SET",
+  );
 
   if (!process.env.MONGODB_URI) {
     console.error("\n❌ FATAL: MONGODB_URI is not set.");

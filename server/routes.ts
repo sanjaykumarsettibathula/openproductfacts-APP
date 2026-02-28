@@ -67,15 +67,27 @@ router.use((req, res, next) => {
  */
 router.post("/auth/login", async (req: Request, res: Response) => {
   try {
+    console.log("🔐 Auth request:", {
+      body: req.body,
+      headers: req.headers,
+      env: {
+        JWT_SECRET: process.env.JWT_SECRET ? "✅ set" : "❌ NOT SET",
+        NODE_ENV: process.env.NODE_ENV,
+      },
+    });
+
     const { email, password, username } = req.body ?? {};
 
     if (!email || typeof email !== "string" || !email.trim()) {
+      console.log("❌ Missing email");
       return res.status(400).json({ error: "email is required" });
     }
     if (!password || typeof password !== "string" || !password.trim()) {
+      console.log("❌ Missing password");
       return res.status(400).json({ error: "password is required" });
     }
     if (password.length < 8) {
+      console.log("❌ Password too short");
       return res
         .status(400)
         .json({ error: "password must be at least 8 characters" });
@@ -137,9 +149,22 @@ router.post("/auth/login", async (req: Request, res: Response) => {
         isNewUser: true,
       });
     }
-  } catch (err) {
-    console.error("Auth error:", err);
-    return res.status(500).json({ error: "Authentication failed" });
+  } catch (err: any) {
+    console.error(" Auth error:", {
+      message: err.message,
+      stack: err.stack,
+      env: {
+        MONGODB_URI: process.env.MONGODB_URI ? " set" : " NOT SET",
+        JWT_SECRET: process.env.JWT_SECRET ? " set" : " NOT SET",
+        EXPO_PUBLIC_GEMINI_API_KEY: process.env.EXPO_PUBLIC_GEMINI_API_KEY
+          ? " set"
+          : " NOT SET",
+      },
+    });
+    return res.status(500).json({
+      error: "Authentication failed",
+      details: process.env.NODE_ENV === "development" ? err.message : undefined,
+    });
   }
 });
 

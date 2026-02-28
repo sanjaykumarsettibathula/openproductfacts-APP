@@ -227,7 +227,10 @@ export default function ProfileScreen() {
           style={styles.scroll}
           contentContainerStyle={[
             styles.scrollContent,
-            { paddingBottom: Platform.OS === "web" ? 34 : insets.bottom + 200 },
+            {
+              paddingBottom:
+                Platform.OS === "web" ? 34 : Math.max(insets.bottom + 20, 100),
+            },
           ]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
