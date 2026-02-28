@@ -34,7 +34,6 @@ async function request<T = any>(
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    ...(rest.headers as Record<string, string>),
   };
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
@@ -46,17 +45,19 @@ async function request<T = any>(
   let response: Response;
   try {
     response = await fetch(`${API_BASE}${path}`, {
-      ...rest,
+      method,
       headers,
       signal: controller.signal,
+      ...rest,
     });
     console.log(`✅ API Response: ${response.status} ${path}`);
   } catch (err: any) {
     clearTimeout(timeout);
     if (err?.name === "AbortError") {
+      console.error(`⏱️ Request timeout: ${path}`);
       throw new Error("Request timed out — check your network connection");
     }
-    console.error(`❌ API Error: ${err?.message || "Unknown"}`);
+    console.error(`❌ API Error: ${err?.message || "Unknown"} (${path})`);
     throw new Error(`Network error: ${err?.message || "Unknown"}`);
   }
   clearTimeout(timeout);
