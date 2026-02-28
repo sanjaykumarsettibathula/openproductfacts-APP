@@ -218,18 +218,20 @@ const PORT = parseInt(process.env.PORT || "3001", 10);
   console.log("\n🚀 Starting FoodScan server...");
   console.log("   NODE_ENV:", process.env.NODE_ENV || "development");
   console.log("   PORT:", PORT);
+  console.log("🔍 ALL ENVIRONMENT VARIABLES:");
   console.log(
     "   MONGODB_URI:",
     process.env.MONGODB_URI ? "✅ set" : "❌ NOT SET",
   );
   console.log(
     "   JWT_SECRET:",
-    process.env.JWT_SECRET ? "✅ set" : "⚠️  not set (using fallback)",
+    process.env.JWT_SECRET ? "✅ set" : "❌ NOT SET",
   );
   console.log(
     "   EXPO_PUBLIC_GEMINI_API_KEY:",
     process.env.EXPO_PUBLIC_GEMINI_API_KEY ? "✅ set" : "❌ NOT SET",
   );
+  console.log("   ALL process.env keys:", Object.keys(process.env));
 
   if (!process.env.MONGODB_URI) {
     console.error("\n❌ FATAL: MONGODB_URI is not set.");
