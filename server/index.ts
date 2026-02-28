@@ -164,43 +164,6 @@ function configureStaticAndExpo() {
 
     const platform = req.headers["expo-platform"];
     if (platform === "ios" || platform === "android") {
-      const manifestPath = path.resolve(
-        process.cwd(),
-        "static-build",
-        platform as string,
-        "manifest.json",
-      );
-      if (!fs.existsSync(manifestPath))
-        return res.status(404).json({ error: `Manifest not found` });
-      res.setHeader("expo-protocol-version", "1");
-      res.setHeader("expo-sfv-version", "0");
-      res.setHeader("content-type", "application/json");
-      return res.send(fs.readFileSync(manifestPath, "utf-8"));
-    }
-
-    if (req.path === "/") {
-      const proto = req.headers["x-forwarded-proto"] || req.protocol || "https";
-      const host =
-        req.headers["x-forwarded-host"] ||
-        req.headers["host"] ||
-        `localhost:${process.env.PORT || 3001}`;
-      const html = template
-        .replace(/BASE_URL_PLACEHOLDER/g, `${proto}://${host}`)
-        .replace(/EXPS_URL_PLACEHOLDER/g, host as string)
-        .replace(/APP_NAME_PLACEHOLDER/g, appName);
-      res.setHeader("Content-Type", "text/html; charset=utf-8");
-      return res.status(200).send(html);
-    }
-    next();
-  });
-
-  app.use("/assets", express.static(path.resolve(process.cwd(), "assets")));
-  app.use(express.static(path.resolve(process.cwd(), "static-build")));
-}
-
-configureStaticAndExpo();
-
-// ─── ERROR HANDLER ────────────────────────────────────────────────────────────
 
 app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
   if (res.headersSent) return next(err);
@@ -210,7 +173,7 @@ app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     .json({ message: err.message || "Internal Server Error" });
 });
 
-// ─── STARTUP ──────────────────────────────────────────────────────────────────
+// ─── STARTUP ──────────────────────────────────────────────────────────
 
 const PORT = parseInt(process.env.PORT || "10000", 10);
 
@@ -219,18 +182,9 @@ const PORT = parseInt(process.env.PORT || "10000", 10);
   console.log("   NODE_ENV:", process.env.NODE_ENV || "development");
   console.log("   PORT:", PORT);
   console.log("🔍 ALL ENVIRONMENT VARIABLES:");
-  console.log(
-    "   MONGODB_URI:",
-    process.env.MONGODB_URI ? "✅ set" : "❌ NOT SET",
-  );
-  console.log(
-    "   JWT_SECRET:",
-    process.env.JWT_SECRET ? "✅ set" : "❌ NOT SET",
-  );
-  console.log(
-    "   EXPO_PUBLIC_GEMINI_API_KEY:",
-    process.env.EXPO_PUBLIC_GEMINI_API_KEY ? "✅ set" : "❌ NOT SET",
-  );
+  console.log("   MONGODB_URI:", process.env.MONGODB_URI ? "✅ set" : "❌ NOT SET");
+  console.log("   JWT_SECRET:", process.env.JWT_SECRET ? "✅ set" : "❌ NOT SET");
+  console.log("   EXPO_PUBLIC_GEMINI_API_KEY:", process.env.EXPO_PUBLIC_GEMINI_API_KEY ? "✅ set" : "❌ NOT SET");
   console.log("   ALL process.env keys:", Object.keys(process.env));
 
   if (!process.env.MONGODB_URI) {
