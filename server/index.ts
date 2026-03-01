@@ -149,14 +149,6 @@ app.post("/api/auth/login", (req: Request, res: Response) => {
     return res.status(400).json({ error: "email and password required" });
   }
 
-  // Mock authentication for testing
-  if (email === "test@example.com" && password === "test123456") {
-    return res.json({
-      token: "mock-jwt-token-for-testing",
-      user: { userId: "test-user", email, username: "test" },
-    });
-  }
-
   return res.status(401).json({ error: "Invalid credentials" });
 });
 
@@ -259,14 +251,6 @@ const PORT = parseInt(process.env.PORT || "10000", 10);
 
       if (!email || !password) {
         return res.status(400).json({ error: "email and password required" });
-      }
-
-      // Mock authentication for testing
-      if (email === "test@example.com" && password === "test123456") {
-        return res.json({
-          token: "mock-jwt-token-for-testing",
-          user: { userId: "test-user", email, username: "test" },
-        });
       }
 
       return res.status(401).json({ error: "Invalid credentials" });

@@ -17,10 +17,14 @@ import {
 
 const API_BASE = (
   process.env.EXPO_PUBLIC_API_URL ||
-  (process.env.NODE_ENV === "production"
-    ? "https://openproductfacts-app-1.onrender.com"
-    : "http://localhost:3001")
+  (__DEV__
+    ? "http://localhost:3001"
+    : "https://openproductfacts-app-1.onrender.com")
 ).replace(/\/$/, "");
+
+console.log("🔧 API_BASE configured:", API_BASE);
+console.log("🔧 EXPO_PUBLIC_API_URL:", process.env.EXPO_PUBLIC_API_URL);
+console.log("🔧 __DEV__:", __DEV__);
 
 // ─── BASE REQUEST ─────────────────────────────────────────────────────────────
 

@@ -14,13 +14,14 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "@/constants/colors";
-import { loginUser, isFirstTimeUser } from "@/lib/auth";
+import { useData } from "@/lib/DataContext";
+import { isFirstTimeUser } from "@/lib/auth";
 import { getProfile } from "@/lib/storage";
 
 export default function LoginScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [loading, setLoading] = useState(false);
+  const { login, loading } = useData();
 
   // Login form state
   const [email, setEmail] = useState("");
@@ -40,19 +41,17 @@ export default function LoginScreen() {
       return;
     }
 
-    // Password validation (minimum 6 characters)
     if (password.length < 6) {
       Alert.alert("Error", "Password must be at least 6 characters long");
       return;
     }
 
-    setLoading(true);
     try {
       // Check if first time BEFORE logging in
       const wasFirstTime = await isFirstTimeUser();
 
-      // Login the user
-      await loginUser(email, name || email.split("@")[0]);
+      // Login using DataContext
+      await login(email, password, name || email.split("@")[0]);
 
       // Get the profile to check if health info is complete
       const userProfile = await getProfile();
@@ -73,10 +72,10 @@ export default function LoginScreen() {
       console.error("Login error:", error);
       Alert.alert(
         "Login Failed",
-        "Please check your credentials and try again",
+        error instanceof Error
+          ? error.message
+          : "Please check your credentials and try again",
       );
-    } finally {
-      setLoading(false);
     }
   };
 

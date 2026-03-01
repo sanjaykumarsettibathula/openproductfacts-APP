@@ -30,8 +30,17 @@
       },
       "permissions": [
         "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO"
-      ]
+        "android.permission.RECORD_AUDIO",
+        "android.permission.INTERNET"
+      ],
+      "networkSecurityConfig": {
+        "domainSettings": [
+          {
+            "domains": ["localhost", "127.0.0.1", "0.0.0.0"],
+            "cleartextTrafficPermitted": true
+          }
+        ]
+      }
     },
     "web": {
       "favicon": "./assets/images/favicon.png"

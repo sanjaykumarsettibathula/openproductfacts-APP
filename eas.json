@@ -14,13 +14,15 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://openproductfacts-app-1.onrender.com"
+        "EXPO_PUBLIC_API_URL": "https://openproductfacts-app-1.onrender.com",
+        "EXPO_PUBLIC_GEMINI_API_KEY": "AIzaSyBwXz4J8Q7T9K2Lm6P5n3Q8R7sT9u2W3vE"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://openproductfacts-app-1.onrender.com"
+        "EXPO_PUBLIC_API_URL": "https://openproductfacts-app-1.onrender.com",
+        "EXPO_PUBLIC_GEMINI_API_KEY": "AIzaSyBwXz4J8Q7T9K2Lm6P5n3Q8R7sT9u2W3vE"
       }
     }
   },

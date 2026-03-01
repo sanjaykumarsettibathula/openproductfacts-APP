@@ -9,16 +9,21 @@ export function getApiUrl(): string {
   let host = process.env.EXPO_PUBLIC_API_URL;
 
   if (!host) {
-    // Fallback to localhost for development
-    host = "localhost:3001";
+    // Fallback based on development vs production build
+    host = __DEV__
+      ? "localhost:3001"
+      : "https://openproductfacts-app-1.onrender.com";
   }
 
   // Handle both localhost and full URLs
   if (host.includes("://")) {
+    console.log("🔧 QueryClient URL (full):", host);
     return host;
   }
 
-  return `http://${host}`;
+  const url = host.includes("://") ? host : `http://${host}`;
+  console.log("🔧 QueryClient URL (constructed):", url);
+  return url;
 }
 
 async function throwIfResNotOk(res: Response) {
