@@ -132,26 +132,6 @@ app.get("/api/health", (_req: Request, res: Response) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-// ─── AUTH ENDPOINT ─────────────────────────────────────────────────────────────
-
-app.post("/api/auth/login", (req: Request, res: Response) => {
-  console.log("🔐 Auth request:", {
-    body: req.body,
-    env: {
-      JWT_SECRET: process.env.JWT_SECRET ? "✅ set" : "❌ NOT SET",
-      NODE_ENV: process.env.NODE_ENV,
-    },
-  });
-
-  const { email, password } = req.body;
-
-  if (!email || !password) {
-    return res.status(400).json({ error: "email and password required" });
-  }
-
-  return res.status(401).json({ error: "Invalid credentials" });
-});
-
 // ─── API ROUTES ───────────────────────────────────────────────────────────────
 
 app.use("/api", apiRouter);
@@ -231,38 +211,7 @@ const PORT = parseInt(process.env.PORT || "10000", 10);
     console.error(
       "   MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/?retryWrites=true&w=majority",
     );
-
-    // For testing without MongoDB, start a minimal server
-    console.log("\n🧪 Starting minimal server without MongoDB for testing...");
-    app.get("/api/health", (_req: Request, res: Response) => {
-      res.json({ status: "ok", timestamp: new Date().toISOString() });
-    });
-
-    app.post("/api/auth/login", (req: Request, res: Response) => {
-      console.log("🔐 Test auth request:", {
-        body: req.body,
-        env: {
-          JWT_SECRET: process.env.JWT_SECRET ? "✅ set" : "❌ NOT SET",
-          NODE_ENV: process.env.NODE_ENV,
-        },
-      });
-
-      const { email, password } = req.body;
-
-      if (!email || !password) {
-        return res.status(400).json({ error: "email and password required" });
-      }
-
-      return res.status(401).json({ error: "Invalid credentials" });
-    });
-
-    app.listen(PORT, "0.0.0.0", () => {
-      console.log(`\n🧪 Minimal server ready on port ${PORT}`);
-      console.log(`   Health: http://localhost:${PORT}/api/health`);
-      console.log(`   Auth:   http://localhost:${PORT}/api/auth/login`);
-    });
-
-    return;
+    process.exit(1);
   }
 
   try {
