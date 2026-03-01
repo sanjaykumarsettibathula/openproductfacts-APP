@@ -153,6 +153,8 @@ router.post("/auth/login", async (req: Request, res: Response) => {
     console.error(" Auth error:", {
       message: err.message,
       stack: err.stack,
+      name: err.name,
+      code: err.code,
       env: {
         MONGODB_URI: process.env.MONGODB_URI ? " set" : " NOT SET",
         JWT_SECRET: process.env.JWT_SECRET ? " set" : " NOT SET",
@@ -163,7 +165,8 @@ router.post("/auth/login", async (req: Request, res: Response) => {
     });
     return res.status(500).json({
       error: "Authentication failed",
-      details: process.env.NODE_ENV === "development" ? err.message : undefined,
+      details: err.message,
+      code: err.code,
     });
   }
 });

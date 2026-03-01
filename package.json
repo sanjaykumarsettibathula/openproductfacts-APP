@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "scripts": {
     "server:dev": "cross-env NODE_ENV=development PORT=3001 node -r dotenv/config -r tsx/cjs server/index.ts",
-    "server:build": "esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=server_dist",
+    "server:build": "esbuild server/index.ts --platform=node --bundle --format=esm --outdir=server_dist --external:expo --external:react-native --external:react",
     "server:prod": "cross-env NODE_ENV=production node server_dist/index.js",
     "start": "npx expo start",
     "android": "npx expo start --android",
