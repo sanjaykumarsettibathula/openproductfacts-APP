@@ -1,40 +1,11 @@
-// ── Load .env FIRST before any other imports ─────────────────────────────────
-// This must be at the very top — before importing storage.ts which reads process.env
-import * as dotenv from "dotenv";
-import * as path from "path";
-
+// ── Environment Variables ─────────────────────────────────
 // In production, Render sets environment variables directly
-// Only load .env for local development
-if (process.env.NODE_ENV !== "production") {
-  const envPaths = [
-    path.resolve(process.cwd(), ".env"),
-    path.resolve(process.cwd(), ".env.local"),
-  ];
-
-  let envLoaded = false;
-  for (const envPath of envPaths) {
-    try {
-      const result = dotenv.config({ path: envPath });
-      if (result.parsed) {
-        console.log(`✅ Loaded .env from: ${envPath}`);
-        envLoaded = true;
-        break;
-      }
-    } catch (error) {
-      // Continue to next path
-    }
-  }
-
-  if (!envLoaded) {
-    console.warn("⚠️  No .env file found, using environment variables only");
-  }
-} else {
-  console.log("🏭 Production mode - using Render environment variables");
-}
+// For local development, create a .env file with required variables
 
 // Now import everything else
 import express from "express";
 import type { Request, Response, NextFunction } from "express";
+import * as path from "path";
 import * as fs from "fs";
 import { connectDB } from "./storage";
 import apiRouter from "./routes";

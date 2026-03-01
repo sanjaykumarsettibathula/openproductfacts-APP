@@ -1,12 +1,35 @@
+"use strict";
+var __create = Object.create;
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getProtoOf = Object.getPrototypeOf;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
+  // If the importer is in node compatibility mode or this is not an ESM
+  // file that has been converted to a CommonJS file using a Babel-
+  // compatible transform (i.e. "__esModule" has not been set), then set
+  // "default" to the CommonJS "module.exports" for node compatibility.
+  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
+  mod
+));
+
 // server/index.ts
-import * as dotenv from "dotenv";
-import * as path from "path";
-import express from "express";
-import * as fs from "fs";
+var import_express2 = __toESM(require("express"));
+var path = __toESM(require("path"));
+var fs = __toESM(require("fs"));
 
 // server/storage.ts
-import { MongoClient } from "mongodb";
-import { randomUUID } from "crypto";
+var import_mongodb = require("mongodb");
+var import_crypto = require("crypto");
 var MONGODB_URI = process.env.MONGODB_URI;
 var DB_NAME = process.env.MONGODB_DB_NAME || "foodscan";
 var _client = null;
@@ -19,7 +42,7 @@ async function connectDB() {
     throw new Error("MONGODB_URI is not set in environment variables");
   }
   _initPromise = (async () => {
-    const client = new MongoClient(MONGODB_URI, {
+    const client = new import_mongodb.MongoClient(MONGODB_URI, {
       maxPoolSize: 10,
       minPoolSize: 1,
       serverSelectionTimeoutMS: 1e4,
@@ -99,7 +122,7 @@ async function findUserByEmail(email) {
 async function createUser(data) {
   const col = await getCol("users");
   const user = {
-    userId: randomUUID(),
+    userId: (0, import_crypto.randomUUID)(),
     email: data.email.toLowerCase().trim(),
     passwordHash: data.passwordHash,
     username: data.username?.trim(),
@@ -232,12 +255,12 @@ async function saveLists(userId, lists) {
 }
 
 // server/routes.ts
-import { Router } from "express";
-import * as jwt2 from "jsonwebtoken";
-import * as bcrypt from "bcryptjs";
+var import_express = require("express");
+var jwt2 = __toESM(require("jsonwebtoken"));
+var bcrypt = __toESM(require("bcryptjs"));
 
 // server/middleware/auth.ts
-import * as jwt from "jsonwebtoken";
+var jwt = __toESM(require("jsonwebtoken"));
 var JWT_SECRET = (() => {
   const secret = process.env.JWT_SECRET;
   if (!secret) {
@@ -282,7 +305,7 @@ function requireAuth(req, res, next) {
 }
 
 // server/routes.ts
-var router = Router();
+var router = (0, import_express.Router)();
 var createErrorResponse = (status, message, details) => ({
   error: message,
   status,
@@ -371,6 +394,8 @@ router.post("/auth/login", async (req, res) => {
     console.error(" Auth error:", {
       message: err.message,
       stack: err.stack,
+      name: err.name,
+      code: err.code,
       env: {
         MONGODB_URI: process.env.MONGODB_URI ? " set" : " NOT SET",
         JWT_SECRET: process.env.JWT_SECRET ? " set" : " NOT SET",
@@ -379,7 +404,8 @@ router.post("/auth/login", async (req, res) => {
     });
     return res.status(500).json({
       error: "Authentication failed",
-      details: process.env.NODE_ENV === "development" ? err.message : void 0
+      details: err.message,
+      code: err.code
     });
   }
 });
@@ -602,30 +628,7 @@ router.put("/lists", requireAuth, async (req, res) => {
 var routes_default = router;
 
 // server/index.ts
-if (process.env.NODE_ENV !== "production") {
-  const envPaths = [
-    path.resolve(process.cwd(), ".env"),
-    path.resolve(process.cwd(), ".env.local")
-  ];
-  let envLoaded = false;
-  for (const envPath of envPaths) {
-    try {
-      const result = dotenv.config({ path: envPath });
-      if (result.parsed) {
-        console.log(`\u2705 Loaded .env from: ${envPath}`);
-        envLoaded = true;
-        break;
-      }
-    } catch (error) {
-    }
-  }
-  if (!envLoaded) {
-    console.warn("\u26A0\uFE0F  No .env file found, using environment variables only");
-  }
-} else {
-  console.log("\u{1F3ED} Production mode - using Render environment variables");
-}
-var app = express();
+var app = (0, import_express2.default)();
 app.use((req, res, next) => {
   const allowedOrigins = /* @__PURE__ */ new Set();
   if (process.env.NODE_ENV !== "production") {
@@ -664,8 +667,8 @@ app.use((req, res, next) => {
   }
   next();
 });
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: false }));
+app.use(import_express2.default.json({ limit: "10mb" }));
+app.use(import_express2.default.urlencoded({ extended: false }));
 app.use((req, res, next) => {
   if (!req.path.startsWith("/api")) return next();
   const start = Date.now();
@@ -680,26 +683,6 @@ app.use((req, res, next) => {
 });
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
-});
-app.post("/api/auth/login", (req, res) => {
-  console.log("\u{1F510} Auth request:", {
-    body: req.body,
-    env: {
-      JWT_SECRET: process.env.JWT_SECRET ? "\u2705 set" : "\u274C NOT SET",
-      NODE_ENV: process.env.NODE_ENV
-    }
-  });
-  const { email, password } = req.body;
-  if (!email || !password) {
-    return res.status(400).json({ error: "email and password required" });
-  }
-  if (email === "test@example.com" && password === "test123456") {
-    return res.json({
-      token: "mock-jwt-token-for-testing",
-      user: { userId: "test-user", email, username: "test" }
-    });
-  }
-  return res.status(401).json({ error: "Invalid credentials" });
 });
 app.use("/api", routes_default);
 function configureStaticAndExpo() {
@@ -763,37 +746,7 @@ var PORT = parseInt(process.env.PORT || "10000", 10);
     console.error(
       "   MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/?retryWrites=true&w=majority"
     );
-    console.log("\n\u{1F9EA} Starting minimal server without MongoDB for testing...");
-    app.get("/api/health", (_req, res) => {
-      res.json({ status: "ok", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
-    });
-    app.post("/api/auth/login", (req, res) => {
-      console.log("\u{1F510} Test auth request:", {
-        body: req.body,
-        env: {
-          JWT_SECRET: process.env.JWT_SECRET ? "\u2705 set" : "\u274C NOT SET",
-          NODE_ENV: process.env.NODE_ENV
-        }
-      });
-      const { email, password } = req.body;
-      if (!email || !password) {
-        return res.status(400).json({ error: "email and password required" });
-      }
-      if (email === "test@example.com" && password === "test123456") {
-        return res.json({
-          token: "mock-jwt-token-for-testing",
-          user: { userId: "test-user", email, username: "test" }
-        });
-      }
-      return res.status(401).json({ error: "Invalid credentials" });
-    });
-    app.listen(PORT, "0.0.0.0", () => {
-      console.log(`
-\u{1F9EA} Minimal server ready on port ${PORT}`);
-      console.log(`   Health: http://localhost:${PORT}/api/health`);
-      console.log(`   Auth:   http://localhost:${PORT}/api/auth/login`);
-    });
-    return;
+    process.exit(1);
   }
   try {
     console.log("\n\u23F3 Connecting to MongoDB...");
